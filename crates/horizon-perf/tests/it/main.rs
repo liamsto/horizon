@@ -12,7 +12,6 @@ mod export;
 mod files;
 mod follow_reader;
 mod golden;
-mod mcp;
 mod pacing_fixture;
 mod part_cut;
 mod query_cli;

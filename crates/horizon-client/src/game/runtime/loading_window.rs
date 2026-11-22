@@ -286,7 +286,7 @@ pub(super) fn start_game<'a>(
     pack_error: Option<String>,
     audio: Audio,
     vanilla_root: PathBuf,
-    started: Instant,
+    _started: Instant,
     rest_loader: Option<WorldRestLoader>,
     settings: Option<Settings>,
     prepared: Option<GameCpuResources>,
@@ -325,51 +325,14 @@ pub(super) fn start_game<'a>(
         game.settings.resource_packs.clear();
         game.settings.save(&Game::options_path());
     }
-    if game.options.benchmark.is_some() {
-        // The same conditions on every machine: no VSync, no frame cap, no
-        // pause or idle limit without focus. In memory only, never saved.
-        game.settings.vsync = false;
-        game.settings.max_fps = 260;
-        game.settings.inactivity_fps_limit = "minimized".into();
-        game.options.no_pause = true;
-    }
     game.apply_settings();
-    // Benchmarks measure the game alone.
-    if game.options.benchmark.is_none() {
-        game.start_mods();
-    }
+    game.start_mods();
     // The initial load's client reload listeners, registered and staged by
     // the loader thread, publish now that the game owns the assets.
     client_reload::apply_client_reload(&game.mod_phase, client_applies);
     game.refresh_loop_context()?;
     // After the mods: their templates are among the ids it lists.
     game.preload_registries();
-    game.start_agent_control()?;
-    if let Some(scenario) = game.options.benchmark.clone() {
-        let control = game
-            .control
-            .get_or_insert_with(horizon_client::control::Server::local);
-        horizon_client::benchmark::start(
-            control.sender(),
-            horizon_client::benchmark::Setup {
-                scenario,
-                started,
-                app: horizon_bench::App {
-                    name: "horizon-client".into(),
-                    version: horizon_client::crash::version(),
-                    commit: option_env!("HORIZON_COMMIT").map(str::to_owned),
-                    mods: Vec::new(),
-                },
-                simulation_distance: game.settings.simulation_distance as u32,
-                vsync: false,
-                fps_cap: None,
-                offscreen: game.options.offscreen,
-                game_dir: std::env::current_dir()?,
-                set: game.options.benchmark_set.clone(),
-                profile: game.options.benchmark_profile,
-            },
-        );
-    }
     if let Some(directory) = std::env::var_os("HORIZON_BOAT_RIDER_FIXTURE") {
         game.run_boat_rider_fixture(std::path::Path::new(&directory))?;
         return Ok(None);

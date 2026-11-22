@@ -47,12 +47,6 @@ impl Game<'_> {
         self.set_screen(Screen::Win);
         self.capture(false);
     }
-    /// Stop the scroll `scroll` pixels in (`horizon-ctl credits ... SCROLL`).
-    pub(super) fn hold_win_screen(&mut self, scroll: f32) {
-        if let Some(win) = self.win.as_mut() {
-            win.screen.hold(scroll);
-        }
-    }
     /// `WinScreen.isPauseScreen`: only the credits without the poem pause.
     pub(super) fn win_screen_pauses(&self) -> bool {
         self.win.as_ref().is_some_and(|w| !w.screen.poem)

@@ -4,8 +4,6 @@ mod export;
 pub mod files;
 mod query;
 #[cfg(not(target_arch = "wasm32"))]
-mod sharing;
-
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
@@ -18,7 +16,6 @@ use horizon_perf_format::v1::Side;
 use serde::Serialize;
 
 use crate::follow::Follower;
-use crate::mcp;
 use crate::ops;
 use crate::request::{self, RequestError};
 use crate::summary::{Baseline, DEFAULT_BUDGET, SummaryOptions};
@@ -58,7 +55,6 @@ usage:
   horizon-perf upload  [FILE|latest] [--dir DIR]         temporary one-hour upload; prints its link and delete token as JSON
   horizon-perf share   [FILE|latest] [--dir DIR]         upload and share for 30 days; prints its link and delete token as JSON
   horizon-perf open    [FILE|latest] [--dir DIR]         serves the file once on 127.0.0.1 and opens the viewer on it; waits for the fetch
-  horizon-perf mcp                                     MCP server on stdio: perf_summary, perf_query, perf_diff, perf_list, perf_follow
 
 OPs: {ops}.
 FILTERS: --side client|server --thread T --from T --to T (seconds; negative counts from the end; mark:NAME) --limit N --dir DIR
@@ -203,22 +199,12 @@ pub fn run(args: &[String], env: &Env, out: &mut dyn Write) -> Result<(), CliErr
     };
     match command.as_str() {
         "summary" => summary(rest, env, out),
-        #[cfg(not(target_arch = "wasm32"))]
-        "upload" | "share" => sharing::run(rest, env, out, command == "share"),
-        #[cfg(not(target_arch = "wasm32"))]
-        "open" => sharing::open(rest, env, out),
         "list" => list(rest, env, out),
         "follow" => follow(rest, env, out),
         "query" => query::query(rest, env, out),
         "diff" => diff::run(rest, env, out),
         "attach" => attach::run(rest, env, out),
         "export" => export::run(rest, env, out),
-        "mcp" => {
-            if !rest.is_empty() {
-                return Err(CliError::Usage("mcp takes no arguments".into()));
-            }
-            mcp::serve(&mut std::io::stdin().lock(), out, env).map_err(failed)
-        }
         "help" | "--help" | "-h" => writeln!(out, "{}", usage()).map_err(failed),
         other => Err(CliError::Usage(format!("unknown command {other}"))),
     }

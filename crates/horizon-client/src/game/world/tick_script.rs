@@ -63,7 +63,7 @@ fn parse(text: &str) -> Option<Running> {
 
 impl Game<'_> {
     /// Before a client tick: start the scenario the harness handed over, or play this tick's lines.
-    pub(super) fn tick_script_step(&mut self, event_loop: &dyn EventLoopCtl) {
+    pub(super) fn tick_script_step(&mut self, _event_loop: &dyn EventLoopCtl) {
         let Some(path) = self.tick_script.path.clone() else {
             return;
         };
@@ -89,7 +89,7 @@ impl Game<'_> {
         let finished = (running.tick > running.ticks).then(|| running.name.clone());
         for line in lines {
             if !self.tick_script_click(&line) {
-                self.replay_line(&line, event_loop);
+                log::warn!("Horizon: tick script line not understood: {line}");
             }
         }
         if let Some(name) = finished {

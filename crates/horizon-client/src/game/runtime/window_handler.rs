@@ -29,7 +29,7 @@ impl Game<'_> {
     /// focus stays as the run found it (`held_focus`) and its pointer grab stays inside the game
     /// (`internal_grab`).
     pub(super) fn scripted_run(&self) -> bool {
-        self.screenshot_sequence.is_some() || self.tick_script.playing() || self.repro.replaying()
+        self.tick_script.playing()
     }
 }
 
@@ -264,7 +264,6 @@ impl Game<'_> {
         if self.error.is_none() && self.safe_start_proof.exit() {
             horizon_client::gfx::safe_start::clear(&Self::options_path());
         }
-        self.end_screenshot_sequence(Err("cancelled: the game is closing".into()));
         self.pad_close_output();
         if let Err(e) = self.save_for_exit() {
             log::warn!("Horizon: failed to save the world on exit: {e}");
@@ -336,7 +335,11 @@ impl Game<'_> {
             return;
         }
         horizon_client::spans::time("server_packs", || self.tick_server_packs());
-        horizon_client::spans::time("control", || self.poll_control(event_loop));
+        // Once a turn, after the frame: the frame's widgets are read, the screen narrated and the
+        // profiler's capture, notices and jobs moved on.
+        horizon_client::widgets::end_frame(self.frames);
+        self.narrate_screen();
+        self.poll_profile();
         if self.pending_save.is_some() {
             return;
         }
@@ -401,11 +404,6 @@ impl ApplicationHandler for Game<'_> {
         let attributes = winit::platform::wayland::WindowAttributesExtWayland::with_name(
             attributes, "horizon", "horizon",
         );
-        // A game an agent started opens without the focus, as splitscreen's windows do, and
-        // the person keeps their keyboard and pointer until they click it (`unclaimed_window`).
-        // X11 activates it anyway, and Windows can too: the focus claims nothing.
-        let agent_started = self.options.control.is_some();
-        self.unclaimed_window = agent_started && !self.options.offscreen;
         // `--offscreen` renders into a texture: its window would only show white.
         let window_step = startup::step("window.create");
         let window = match event_loop.create_window(
@@ -413,7 +411,7 @@ impl ApplicationHandler for Game<'_> {
                 .with_inner_size(winit::dpi::LogicalSize::new(size[0], size[1]))
                 .with_fullscreen(fullscreen.then_some(winit::window::Fullscreen::Borderless(None)))
                 .with_visible(!self.options.offscreen)
-                .with_active(!agent_started),
+                .with_active(true),
         ) {
             Ok(w) => Arc::new(w),
             Err(e) => {

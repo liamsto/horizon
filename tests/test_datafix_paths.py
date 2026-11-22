@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 import zipfile
 
-from tools import datafix_paths, pr_ready
+from tools import datafix_paths
 from tests.symlinks import symlink_or_skip
 
 
@@ -53,14 +53,6 @@ class DatafixPaths(unittest.TestCase):
         os.environ['HORIZON_DATAFIX_ROOT'] = str(self.base / 'private')
         self.assertEqual(datafix_paths.writable_root(), self.base / 'private')
 
-    def test_preflight_starts_no_subprocess_on_refusal(self):
-        os.environ['HORIZON_DATAFIX_ROOT'] = str(self.shared / 'downloads')
-        with mock.patch.object(pr_ready.subprocess, 'Popen') as runner:
-            with self.assertRaisesRegex(ValueError, 'HORIZON_DATAFIX_ROOT'):
-                step = pr_ready.Step('Parity', 'echo unexpected')
-                step.datafix_selected = True
-                pr_ready.run_script([step], 'local', False)
-            runner.assert_not_called()
 
     def test_regular_file_and_unwritable_ancestor_refused(self):
         root = self.checkout / '.local/datafix'
@@ -80,26 +72,7 @@ class DatafixPaths(unittest.TestCase):
             datafix_paths.writable_root()
         self.assertEqual(list(self.shared.iterdir()), [])
 
-    def test_subprocess_receives_canonical_root(self):
-        os.environ['HORIZON_DATAFIX_ROOT'] = 'private-datafix'
-        step = pr_ready.Step('Parity', 'true')
-        step.datafix_selected = True
-        with mock.patch.object(datafix_paths.os, 'getcwd', return_value=str(self.checkout)), mock.patch.object(pr_ready.subprocess, 'Popen', side_effect=RuntimeError('intercepted')) as runner:
-            with self.assertRaisesRegex(RuntimeError, 'intercepted'):
-                pr_ready.run_script([step], 'local', False)
-        self.assertEqual(runner.call_args.kwargs['env']['HORIZON_DATAFIX_ROOT'], str(self.checkout / 'private-datafix'))
-        self.assertEqual(os.environ['HORIZON_DATAFIX_ROOT'], 'private-datafix')
 
-    def test_unknown_dependencies_still_preflight_opt_in(self):
-        args = argparse.Namespace(host='local', quick=False, harnesses=True, datafix=True)
-        with mock.patch.object(pr_ready, 'affected_here', return_value=None):
-            step = next(s for s in pr_ready.plan(args, 'origin/main', set(), {}, set(), {}) if s.name == 'Parity')
-        self.assertTrue(step.datafix_selected)
-        os.environ['HORIZON_DATAFIX_ROOT'] = str(self.shared)
-        with mock.patch.object(pr_ready.subprocess, 'Popen') as runner:
-            with self.assertRaisesRegex(ValueError, 'HORIZON_DATAFIX_ROOT'):
-                pr_ready.run_script([step], 'local', False)
-            runner.assert_not_called()
 
     def test_relative_override(self):
         os.environ['HORIZON_DATAFIX_ROOT'] = 'private-datafix'
@@ -117,27 +90,7 @@ class DatafixPaths(unittest.TestCase):
                 self.assertEqual(list(self.shared.iterdir()), [])
                 link.unlink()
 
-    def test_unrelated_local_and_remote_parity_do_not_preflight(self):
-        os.environ['HORIZON_DATAFIX_ROOT'] = str(self.shared)
-        for host, selected in [('local', False), ('macmini', True)]:
-            step = pr_ready.Step('Parity', 'true')
-            step.datafix_selected = selected
-            with mock.patch.object(pr_ready.subprocess, 'Popen', side_effect=RuntimeError('runner reached')):
-                with self.assertRaisesRegex(RuntimeError, 'runner reached'):
-                    pr_ready.run_script([step], host, False)
 
-    def test_author_plan_requires_datafix_opt_in(self):
-        (self.checkout / '.local/minecraft').mkdir(parents=True)
-        (self.checkout / '.local/horizon-client').mkdir()
-        for opt_in in (False, True):
-            args = argparse.Namespace(host='local', quick=False, harnesses=True, datafix=opt_in)
-            output = io.StringIO()
-            with mock.patch.object(pr_ready, 'ROOT', self.checkout), mock.patch.object(pr_ready, 'affected_here', return_value=['datafix']), contextlib.redirect_stderr(output):
-                steps = pr_ready.plan(args, 'origin/main', set(), {}, set(), {})
-            step = next(s for s in steps if s.name == 'Parity')
-            self.assertEqual(step.datafix_selected, opt_in)
-            self.assertEqual('--exclude datafix' in step.command, not opt_in)
-            self.assertEqual(output.getvalue().count('datafix parity not run:'), 0 if opt_in else 1)
 
     def test_download_and_lock_destinations_are_private(self):
         # Script consumers import siblings directly and mutate sys.path. Keep

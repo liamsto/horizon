@@ -47,7 +47,6 @@ impl Game<'_> {
     fn tick_remote_level_body(&mut self) -> Result<()> {
         self.fire_pending_block_entity_loads();
         self.ticks += 1;
-        self.repro_tick();
         // Hud.tick ends with ChatComponent.tick.
         let chat_ticks = self.visual_ticks();
         self.ui.chat.tick(&self.gui.atlas, chat_ticks);

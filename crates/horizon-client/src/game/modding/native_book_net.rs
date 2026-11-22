@@ -42,33 +42,6 @@ impl Game<'_> {
         }
     }
 
-    pub(super) fn sync_replaced_book_settings(&mut self, uuid: u128) {
-        let Some(host) = self.lan.as_ref() else {
-            return;
-        };
-        let Some(guest) = host.hub.guests.iter().find(|guest| guest.uuid == uuid) else {
-            return;
-        };
-        let Some(authority) = self
-            .native_net
-            .book_connections
-            .get_mut(&guest.conn)
-            .and_then(|connection| connection.authority.as_mut())
-        else {
-            return;
-        };
-        let Some(revision) = authority.revision.checked_add(1) else {
-            return;
-        };
-        authority.revision = revision;
-        if let Some(data) = settings_codec::encode(&authority.snapshot(&guest.recipe_book.custom)) {
-            guest.send(&C::CustomPayload(CustomPayload {
-                channel: CHANNEL.into(),
-                data,
-            }));
-        }
-    }
-
     pub(super) fn reset_book_view(&mut self) {
         self.native_net.placement.client = Default::default();
         self.native_net.placement.deadline = None;

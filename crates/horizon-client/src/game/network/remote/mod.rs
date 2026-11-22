@@ -1004,10 +1004,6 @@ impl Game<'_> {
         self.player_chat_line_body(chat)
     }
 
-    // polling.rs
-    pub(super) fn remote_carts(&self) -> Option<Vec<serde_json::Value>> {
-        self.remote_carts_body()
-    }
     pub(super) fn auth(&self) -> Option<std::sync::Arc<horizon_client::auth::AuthSession>> {
         self.auth_body()
     }
@@ -1022,9 +1018,6 @@ impl Game<'_> {
     }
     pub(super) fn remote_menu_id(&self) -> i32 {
         self.remote_menu_id_body()
-    }
-    pub(super) fn remote_chat(&self, n: usize) -> Option<Vec<String>> {
-        self.remote_chat_body(n)
     }
     pub(super) fn remote_backlog(&self) -> usize {
         self.remote_backlog_body()
@@ -1609,9 +1602,6 @@ impl Game<'_> {
     }
     fn remote_clock_tick(&mut self) {
         self.remote_clock_tick_body()
-    }
-    pub(super) fn remote_status(&self) -> Option<serde_json::Value> {
-        self.remote_status_body()
     }
 }
 

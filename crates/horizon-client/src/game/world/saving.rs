@@ -108,35 +108,6 @@ impl Game<'_> {
         Ok(())
     }
 
-    /// Control saves acknowledge only after durable completion, while their
-    /// snapshot work is spread across event-loop turns too.
-    pub(super) fn begin_control_save(
-        &mut self,
-        all: bool,
-        reply: std::sync::mpsc::Sender<String>,
-    ) -> Result<()> {
-        if self.pending_save.is_some() {
-            return Err("a world save is already in progress".into());
-        }
-        if all {
-            self.world
-                .modified
-                .extend(self.world.chunks.keys().copied());
-        }
-        self.keys.clear();
-        self.physical_keys.clear();
-        self.left = false;
-        self.right = false;
-        self.pending_save = Some(ClosingSave {
-            quit: false,
-            close: false,
-            reply: Some(reply),
-            started: Instant::now(),
-            stage: Stage::Generation,
-        });
-        Ok(())
-    }
-
     /// `true` means the window can exit. The session lock stays in Game until
     /// every snapshot has been queued and every writer has synced its files.
     pub(super) fn poll_closing_save(&mut self) -> Result<bool> {
@@ -254,7 +225,6 @@ impl Game<'_> {
                     Ok(true)
                 } else {
                     if save.close && self.title.is_none() {
-                        self.finish_perf();
                         self.finish_close_world()?;
                     }
                     self.clock.reset();
@@ -320,10 +290,6 @@ impl Game<'_> {
     /// saved icon is on the screen, grab the rendered frame once a second until
     /// the save has one. The Select World list shows it as the world's preview.
     pub(super) fn tick_world_icon(&mut self) {
-        // Its grab would take a sequence's frame.
-        if self.screenshot_sequence.is_some() {
-            return;
-        }
         let Some(icon) = self.world_icon.as_ref() else {
             return;
         };

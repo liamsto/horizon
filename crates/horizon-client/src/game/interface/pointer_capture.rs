@@ -92,7 +92,6 @@ impl Game<'_> {
         if self
             .focus_lost
             .is_some_and(|t| t.elapsed() > Duration::from_millis(500))
-            && self.control.is_none()
             && self.screen == Screen::Playing
             && !studio_suppresses_focus_pause(self.replay.playing(), self.studio.flying())
             && self.player.is_some()

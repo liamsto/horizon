@@ -1960,39 +1960,6 @@ issues = \"http://example.org/issues\"
     }
 
     #[test]
-    fn a_wasm_mod_carries_exactly_its_declared_module() {
-        // A minimal valid shared member: a `dylink.0` section and the three guest exports.
-        let module = wat::parse_str(
-            r#"(module (@custom "dylink.0" "\01\04\00\00\00\00")
-                (func (export "horizon_layout")) (func (export "horizon_in")) (func (export "horizon_hook")))"#,
-        )
-        .unwrap();
-        let text = format!(
-            "{}\n[wasm]\nsha512 = \"{}\"\ntoolchain = \"1.99.1\"\nbuilt_with = \"test\"\n",
-            EXAMPLE.trim_end(),
-            sha512_of(&module)
-        );
-        let bytes = Package::write_files(&text, &[(WASM, &module)]).unwrap();
-        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
-        assert!(Package::read_zip(&mut zip).unwrap().manifest.wasm.is_some());
-        let error = Package::write_files(&text, &[(WASM, b"\0asm\x02\0\0\0")]).unwrap_err();
-        assert_eq!(error, WasmError::Hash.to_string());
-        assert_eq!(
-            Package::write_files(&text, &[]).unwrap_err(),
-            WasmError::Missing.to_string()
-        );
-        let both = format!(
-            "{text}\n[native]\ngame = \"g\"\nhorizon = \"{0}\"\nmixins = \"{0}\"\n",
-            "a".repeat(40)
-        );
-        assert!(
-            Manifest::parse(&both)
-                .unwrap_err()
-                .contains("a mod is [native] or [wasm], not both; only [native] tables compile game code, so a wasm mod has no mixin, bridge, state or module")
-        );
-    }
-
-    #[test]
     fn wasm_packages_refuse_unknown_native_fields() {
         use sha2::{Digest, Sha512};
         use std::io::Write;

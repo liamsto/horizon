@@ -738,7 +738,6 @@ impl Game<'_> {
             return self.begin_closing_save(false);
         }
         self.client_logging_out();
-        self.finish_perf();
         if reason.is_none() {
             // Leaving on purpose: nothing for auto-reconnect to retry.
             self.extras_left();

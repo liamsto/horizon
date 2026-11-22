@@ -474,39 +474,6 @@ impl Game<'_> {
         trade.xp = session.xp;
         trade.offers = session.offers.clone();
     }
-    /// Opens a merchant menu without a mob (horizon-ctl `trade`).
-    pub(super) fn open_merchant(&mut self, profession: &str, variant: &str, level: i32) {
-        let profession = if profession.contains(':') {
-            profession.to_owned()
-        } else {
-            format!("minecraft:{profession}")
-        };
-        let variant = format!("minecraft:{}", variant.trim_start_matches("minecraft:"));
-        let level = level.clamp(1, 5);
-        let origin = self
-            .player
-            .as_ref()
-            .map_or([0.0; 3], |p| [p.position.x, p.position.y, p.position.z]);
-        let mut offers = Vec::new();
-        for l in 1..=level {
-            let set = self.stations().trades.set_for(&profession, l);
-            offers.extend(self.offers_from_set(&set, &variant, origin));
-        }
-        let mut session = merchant::Session::new(offers, true);
-        session.profession = profession;
-        session.variant = variant;
-        session.level = level;
-        session.xp = merchant::min_xp(level);
-        session.origin = origin;
-        self.open_merchant_state(MerchantState {
-            session: Box::new(session),
-            scroll: 0,
-            dragging: false,
-            focused: None,
-            mob: None,
-            name: None,
-        });
-    }
     /// A server's trading window (no mob here: the server keeps it).
     pub(super) fn open_remote_merchant(&mut self, session: merchant::Session, name: Option<Text>) {
         self.open_merchant_state(MerchantState {

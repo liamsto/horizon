@@ -19,7 +19,6 @@ semver = { version = "1", features = ["serde"] }
 toml = "1.1.6"
 log = "0.4"
 png = "0.18"
-wasmparser = "0.261"
 # `[wasm]` and `[[jar]]` hashes (SHA-512), and the registry index's SHA-256.
 sha2 = "0.10"
 # The registry index's minisign signatures (feature `index`; no dependencies of its own).
@@ -65,7 +64,6 @@ index = ["dep:minisign-verify", "dep:horizon-shader-api"]
 
 [dev-dependencies]
 horizon-mod-api = { path = "../horizon-mod-api" }
-wat = "1"
 tempfile = "3.27.0"
 
 [lints]

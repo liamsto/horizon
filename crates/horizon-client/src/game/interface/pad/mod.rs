@@ -18,31 +18,9 @@ use horizon_client::{
     pad_glyph::{Glyph, Glyphs},
 };
 use horizon_client_input::radial;
-use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use winit::event::MouseButton;
 use winit::keyboard::KeyCode;
-
-pub(super) const HELP: &[&str] = &[
-    "pad BUTTON down|up|tap         a virtual controller button (south east west north lb rb lt rt select start ls rs up down left right)",
-    "pad stick left|right X Y       tilt a virtual stick (-1..1, up positive); 0 0 centres it",
-    "pad trigger left|right VALUE   pull a virtual trigger (0..1)",
-    "pad release                    centre and release the virtual controller (as an unplug: the radial menu cancels)",
-    "pad focus true|false           the window gains or loses the focus, as a window focus event does",
-    "pad status                     connected controllers, the active one and its state",
-    "pad connection connected [FAMILY]|disconnected   as if a controller (PlayStation unless FAMILY) came or went at this game's own reader",
-    "pad family xbox|playstation|nintendo|auto   the pad playing is that family's (its glyphs; a Nintendo one's letters)",
-];
-
-/// A pad family `pad` names; `auto` is a pad of no known maker.
-fn style_named(name: &str) -> Result<GlyphStyle> {
-    GlyphStyle::ALL
-        .into_iter()
-        .find(|style| style.name() == name)
-        .ok_or_else(|| {
-            format!("family must be xbox, playstation, nintendo or auto, not {name}").into()
-        })
-}
 
 /// The controllers and the state the game last acted on.
 #[derive(Default)]
@@ -282,10 +260,6 @@ impl Pads {
         edges
     }
 
-    /// A replay's pad button, in place of `pad`'s line.
-    pub(super) fn inject_button(&mut self, button: Button, down: bool) {
-        self.injected.set(button, down);
-    }
     /// Splitscreen: this player's pad state, from `source`. Another pad, or
     /// none: the old one's A going away isn't a release.
     /// `peaks`: the furthest its sticks leant since the last feed (`Pads::peaks`).
@@ -313,13 +287,6 @@ impl Pads {
                 product: None,
             })
         })
-    }
-    /// A replay ended: let go of everything it held.
-    pub(super) fn clear_injected(&mut self) {
-        self.menu.armed = None;
-        self.radial.cancel();
-        self.menu.stop_craft();
-        self.injected = PadState::default();
     }
 
     /// Whether a held button's press went to `action`, including releases delayed until the next
@@ -902,123 +869,4 @@ impl Game<'_> {
         self.split_hud.notice.raise(notice);
     }
 
-    pub(super) fn pad_command(&mut self, words: &[&str]) -> Result<Value> {
-        let arg = |i: usize| -> Result<&str> {
-            words
-                .get(i)
-                .copied()
-                .ok_or_else(|| format!("usage: {}", HELP[0]).into())
-        };
-        let number = |i: usize| -> Result<f32> {
-            let v: f32 = arg(i)?.parse()?;
-            if v.is_finite() {
-                Ok(v)
-            } else {
-                Err("not a number".into())
-            }
-        };
-        match arg(1)? {
-            "status" => {
-                let s = &self.pad.state;
-                let held: Vec<&str> = Button::ALL
-                    .into_iter()
-                    .filter(|b| self.pad.edges.is_held(*b))
-                    .map(Button::name)
-                    .collect();
-                let mut status = json!({
-                    "enabled": self.settings.controller.enabled,
-                    "glyphs": self.pad.style.name(),
-                    "last_rumble": self.pad.last_rumble.map(|(why, p)| json!({
-                        "reason": why, "strong": p.strong, "weak": p.weak,
-                        "triggers": p.triggers, "ms": p.millis,
-                    })),
-                    "in_use": self.pad.in_use,
-                    "notice": self.split_hud.notice.showing().map(|(title, body)| {
-                        json!({ "title": title, "body": body })
-                    }),
-                    "menu": self.pad_menu_status(),
-                    "radial": self.pad_radial_status(),
-                    "guide": self.pad_guide_status(),
-                    "held": held,
-                    "left": s.left,
-                    "right": s.right,
-                    "triggers": s.triggers,
-                });
-                if let (Some(status), Value::Object(devices)) =
-                    (status.as_object_mut(), self.pad_devices_status())
-                {
-                    status.extend(devices);
-                }
-                Ok(status)
-            }
-            "connection" => {
-                let change = match arg(2)? {
-                    "connected" => Connection::Connected(match words.get(3) {
-                        Some(family) => style_named(family)?,
-                        None => GlyphStyle::PlayStation,
-                    }),
-                    "disconnected" => Connection::Disconnected { active: true },
-                    other => {
-                        return Err(format!(
-                            "connection must be connected or disconnected, not {other}"
-                        )
-                        .into());
-                    }
-                };
-                self.pad.connections.push(change);
-                Ok(json!({ "ok": true }))
-            }
-            // The pad playing poses as this family's: its glyphs, and a Nintendo one's letters.
-            "family" => {
-                self.pad.style = style_named(arg(2)?)?;
-                Ok(json!({ "ok": true }))
-            }
-            "release" => {
-                self.pad.menu.armed = None;
-                self.pad.radial.cancel();
-                self.direct_craft_stop();
-                self.pad.injected = PadState::default();
-                self.pad.taps.clear();
-                Ok(json!({ "ok": true }))
-            }
-            "stick" => {
-                let v = [number(3)?.clamp(-1.0, 1.0), number(4)?.clamp(-1.0, 1.0)];
-                match arg(2)? {
-                    "left" => self.pad.injected.left = v,
-                    "right" => self.pad.injected.right = v,
-                    other => return Err(format!("stick must be left or right, not {other}").into()),
-                }
-                Ok(json!({ "ok": true }))
-            }
-            "trigger" => {
-                let v = number(3)?.clamp(0.0, 1.0);
-                match arg(2)? {
-                    "left" => self.pad.injected.triggers[0] = v,
-                    "right" => self.pad.injected.triggers[1] = v,
-                    other => {
-                        return Err(format!("trigger must be left or right, not {other}").into());
-                    }
-                }
-                Ok(json!({ "ok": true }))
-            }
-            name => {
-                let button = Button::parse(name)
-                    .ok_or_else(|| format!("unknown pad button {name}; {}", HELP[0]))?;
-                match arg(2)? {
-                    "down" => self.pad.injected.set(button, true),
-                    "up" => self.pad.injected.set(button, false),
-                    "tap" => {
-                        self.pad.injected.set(button, true);
-                        self.pad.taps.push(button);
-                    }
-                    other => {
-                        return Err(
-                            format!("pad action must be down, up or tap, not {other}").into()
-                        );
-                    }
-                }
-                Ok(json!({ "ok": true }))
-            }
-        }
-    }
 }

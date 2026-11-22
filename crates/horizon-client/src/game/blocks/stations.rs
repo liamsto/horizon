@@ -2067,27 +2067,6 @@ impl Game<'_> {
         }
         lines
     }
-    /// Menu state for the control socket.
-    pub(super) fn station_info(&self) -> serde_json::Value {
-        let Some(s) = self.station.as_ref() else {
-            return match self.container_kind() {
-                Some(BlockEntity::Brewing(b)) => {
-                    serde_json::json!({ "brew_time": b.brew_time, "fuel": b.fuel })
-                }
-                _ => serde_json::Value::Null,
-            };
-        };
-        let recipes = &self.stations().recipes.stonecutting;
-        serde_json::json!({
-            "costs": s.offers.costs,
-            "clues": s.offers.clues.iter().map(|c| c.as_ref().map(|(e, l)| format!("{e} {l}"))).collect::<Vec<_>>(),
-            "bookcases": s.bookcases,
-            "anvil_cost": s.anvil.cost,
-            "result": s.result.as_ref().map(|r| format!("{} x{}", r.item, r.count)),
-            "recipes": s.stone.recipes.iter().map(|&i| recipes[i].id.clone()).collect::<Vec<_>>(),
-            "selected": s.selected,
-        })
-    }
     /// Options.advancedItemTooltips (F3+H).
     pub(super) fn options_advanced_tooltips(&self) -> bool {
         self.settings.file.bool("advancedItemTooltips")

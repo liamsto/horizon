@@ -5,7 +5,6 @@ use super::{Game, Screen};
 use horizon_client::{
     gamepad::{Button, MenuJob},
     hud::HudBatch,
-    lang,
     pad_glyph::{self, Glyph},
     widgets::{self, Action, DeclaredAction, Kind, Target},
 };
@@ -153,55 +152,6 @@ impl Game<'_> {
         }
     }
 
-    /// `pad status`: the glyphs drawn now and where: the part each is for, its label, its text's
-    /// place, what it covers, and its sprite (none: the label on a key).
-    pub(super) fn pad_glyphs_status(&self) -> Vec<serde_json::Value> {
-        let view = self.gui_batch().map_or((0.0, 0.0), |b| (b.width, b.height));
-        let atlas = &self.gui.atlas;
-        self.pad_glyphs(view)
-            .iter()
-            .map(|&(glyph, x, y)| {
-                serde_json::json!({
-                    "button": format!("{:?}", glyph.part()),
-                    "label": glyph.label(),
-                    "at": [x, y],
-                    "rect": pad_glyph::rect(atlas, glyph, x, y),
-                    "sprite": pad_glyph::art(atlas, glyph),
-                })
-            })
-            .collect()
-    }
-
-    /// `pad status`: what this screen declared.
-    pub(super) fn pad_actions_status(&self) -> Vec<serde_json::Value> {
-        self.pad_actions()
-            .iter()
-            .map(|d| {
-                serde_json::json!({
-                    "action": format!("{:?}", d.action),
-                    "rect": d.rect,
-                    "enabled": d.enabled,
-                })
-            })
-            .collect()
-    }
-
-    /// `pad status`: buttons labelled Done, Back or Cancel that didn't declare their job.
-    pub(super) fn pad_undeclared_buttons(&self) -> Vec<String> {
-        let names = [
-            ("gui.done", "Done"),
-            ("gui.back", "Back"),
-            ("gui.cancel", "Cancel"),
-        ]
-        .map(|(key, fallback)| lang::get_or(key, fallback));
-        let declared = widgets::last_actions(self.key_screen());
-        widgets::last_labelled()
-            .into_iter()
-            .filter(|w| names.contains(&w.label))
-            .filter(|w| !declared.iter().any(|d| d.rect == [w.x, w.y, w.w, w.h]))
-            .map(|w| w.label)
-            .collect()
-    }
 }
 
 #[cfg(test)]

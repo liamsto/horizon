@@ -379,6 +379,9 @@ def main(argv: list[str] | None = None) -> int:
     codes = set(args.lang or ())
     if args.crates_dir is None and args.game_dir == GAME:
         args.crates_dir = CRATES
+    # This fork has no launcher: without its folder only the game's languages are read.
+    if args.launcher_dir == LAUNCHER and not LAUNCHER.is_dir() and not args.launcher_only:
+        args.game_only = True
     if args.mark_reviewed is not None:
         return mark_command(args, codes)
     if args.fail_under is not None and args.launcher_only:

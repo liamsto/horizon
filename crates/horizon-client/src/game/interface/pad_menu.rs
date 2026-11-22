@@ -1979,41 +1979,6 @@ impl Game<'_> {
         }
     }
 
-    /// `pad status`: the menu mode, the focused target and every target.
-    pub(super) fn pad_menu_status(&self) -> serde_json::Value {
-        let kind = |k: Kind| match k {
-            Kind::Button => "button",
-            Kind::Slider { .. } => "slider",
-            Kind::Field => "field",
-            Kind::Row => "row",
-            Kind::Slot => "slot",
-            Kind::Tab(true) => "tab*",
-            Kind::Tab(false) => "tab",
-        };
-        let target = |t: &Target| serde_json::json!({ "rect": t.rect, "kind": kind(t.kind) });
-        serde_json::json!({
-            "mode": if self.pad_focus_mode() { "focus" } else { "pointer" },
-            "focus": self.pad.menu.focus.as_ref().map(target),
-            "holding_slider": self.pad_holding_slider(),
-            "pointer": self.pad.menu.pos.map(|_| self.cursor),
-            "keyboard": self.pad.menu.osk.is_some(),
-            "crafting": self.pad.menu.craft.is_some(),
-            "craft_hint": self.direct_craft_usable(),
-            "targets": self.pad_targets().iter().map(target).collect::<Vec<_>>(),
-            "actions": self.pad_actions_status(),
-            "glyphs": self.pad_glyphs_status(),
-            "undeclared": self.pad_undeclared_buttons(),
-            "screen_key": format!("{:016x}", self.key_screen()),
-            "remembered": self
-                .pad
-                .menu
-                .remembered
-                .iter()
-                .map(|(k, r)| (format!("{k:016x}"), serde_json::json!(r.rect)))
-                .collect::<serde_json::Map<_, _>>(),
-        })
-    }
-
     // ---- the keyboard: vanilla's focus navigation (`key_focus`) ----
 
     pub(super) fn pad_cancel_menu(&mut self, event_loop: &dyn EventLoopCtl) {

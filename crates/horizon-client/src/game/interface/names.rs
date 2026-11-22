@@ -209,20 +209,6 @@ impl Game<'_> {
             _ => self.acting_player_name().to_owned(),
         }
     }
-    /// The names the name tags show this frame (the control socket's status).
-    pub(in crate::game) fn shown_name_tags(&self, camera: glam::DVec3) -> Vec<String> {
-        self.name_tags(camera, 1.0)
-            .into_iter()
-            .filter_map(|t| t.lines.last().map(|(t, _)| t.plain()))
-            .collect()
-    }
-    /// Each name tag this frame.
-    fn name_tags(&self, camera: glam::DVec3, alpha: f64) -> Vec<NameTag> {
-        self.name_tags_with_hooks(camera, alpha, !mod_api::__private::mods().is_empty())
-    }
-    fn name_tags_with_hooks(&self, camera: glam::DVec3, alpha: f64, hooks: bool) -> Vec<NameTag> {
-        self.collect_name_tags(camera, alpha, hooks, None)
-    }
     fn collect_name_tags(
         &self,
         camera: glam::DVec3,
@@ -1370,5 +1356,31 @@ mod tests {
             !sb::name_shown(None, None, view_vehicle),
             "vanilla shouldShowName hides tag for vehicles with no team"
         );
+    }
+}
+
+#[cfg(test)]
+impl Game<'_> {
+    /// The names the name tags show this frame (the control socket's status).
+    pub(in crate::game) fn shown_name_tags(&self, camera: glam::DVec3) -> Vec<String> {
+        self.name_tags(camera, 1.0)
+            .into_iter()
+            .filter_map(|t| t.lines.last().map(|(t, _)| t.plain()))
+            .collect()
+    }
+}
+
+#[cfg(test)]
+impl Game<'_> {
+    /// Each name tag this frame.
+    fn name_tags(&self, camera: glam::DVec3, alpha: f64) -> Vec<NameTag> {
+        self.name_tags_with_hooks(camera, alpha, !mod_api::__private::mods().is_empty())
+    }
+}
+
+#[cfg(test)]
+impl Game<'_> {
+    fn name_tags_with_hooks(&self, camera: glam::DVec3, alpha: f64, hooks: bool) -> Vec<NameTag> {
+        self.collect_name_tags(camera, alpha, hooks, None)
     }
 }

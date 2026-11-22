@@ -76,9 +76,6 @@ impl Pickups {
         self.live.clear();
         self.added.clear();
     }
-    pub fn made(&self) -> &std::collections::BTreeMap<&'static str, u64> {
-        &self.made
-    }
 }
 
 /// `ItemPickupParticleGroup.ParticleInstance.fromParticle`: the position at
@@ -220,5 +217,12 @@ mod tests {
             (end[0] - 4.0).abs() < 1e-9 && (end[1] - 65.0).abs() < 1e-9,
             "{end:?}"
         );
+    }
+}
+
+#[cfg(test)]
+impl Pickups {
+    pub fn made(&self) -> &std::collections::BTreeMap<&'static str, u64> {
+        &self.made
     }
 }

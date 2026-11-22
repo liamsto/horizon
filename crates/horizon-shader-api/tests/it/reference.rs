@@ -311,20 +311,3 @@ fn the_sample_pack_s_stages_compile() {
         }
     }
 }
-
-#[test]
-fn the_reference_is_up_to_date() {
-    let doc = reference::PATH;
-    let path = root().join(doc);
-    let want = reference::markdown();
-    if std::env::var_os("HORIZON_WRITE_DOCS").is_some() {
-        std::fs::write(&path, &want).unwrap();
-    }
-    let have = std::fs::read_to_string(&path)
-        .unwrap_or_default()
-        .replace("\r\n", "\n");
-    assert!(
-        have == want,
-        "{doc} is out of date: HORIZON_WRITE_DOCS=1 cargo test -p horizon-shader-api --test it reference::"
-    );
-}

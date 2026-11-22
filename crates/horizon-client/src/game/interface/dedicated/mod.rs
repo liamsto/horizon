@@ -427,13 +427,6 @@ thread_local! {
     static CAPTURE: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Runs `f` and returns the lines it logged.
-fn capture_log(f: impl FnOnce()) -> Vec<String> {
-    CAPTURE.set(Some(Vec::new()));
-    f();
-    CAPTURE.take().unwrap_or_default()
-}
-
 /// Main.main up to the server start: arguments, server.properties (stored
 /// back at once), eula.txt. False when the process should stop here.
 pub(super) fn preflight(options: &mut Options) -> Result<bool> {
@@ -1520,7 +1513,6 @@ impl Game<'_> {
                 while let Ok(line) = state.console.try_recv() {
                     self.console_line(&mut state, &line);
                 }
-                self.poll_server_control(&mut state);
             }));
             if let Err(payload) = prelude {
                 crashed = Some(panic_message(payload.as_ref()));
@@ -1764,18 +1756,6 @@ impl Game<'_> {
         }
     }
 
-    /// Network players `BanIpCommands` and the management service disconnect for an address.
-    fn ip_ban_players(&self, ip: &str) -> Vec<u128> {
-        self.lan.as_ref().map_or_else(Vec::new, |h| {
-            h.hub
-                .guests
-                .iter()
-                .filter(|g| g.participates_online() && g.address.ip().to_string() == ip)
-                .map(|g| g.uuid)
-                .collect()
-        })
-    }
-
     /// ServerGamePacketListenerImpl.tick: players idle longer than the
     /// timeout are kicked.
     pub(super) fn kick_idle(&mut self, minutes: i32) {
@@ -1902,14 +1882,6 @@ impl Game<'_> {
     /// One console line, then the operators' share of its feedback.
     fn console_line(&mut self, state: &mut ServerState, line: &str) {
         self.console_line_telling(state, line, state.broadcast_console);
-    }
-
-    /// One console line run as `RconConsoleSource` runs an RCON command: the same console at level 4,
-    /// its source named `Rcon`, and the operators told when `broadcast-rcon-to-ops` is on.
-    fn rcon_line(&mut self, state: &mut ServerState, line: &str) {
-        self.rcon_source = true;
-        self.console_line_telling(state, line, state.broadcast_rcon);
-        self.rcon_source = false;
     }
 
     /// `console_line` with `inform` as `CommandSource.shouldInformAdmins`.
@@ -2460,39 +2432,6 @@ impl Game<'_> {
         self.store_property("player-idle-timeout", minutes.to_string());
     }
 
-    /// `DedicatedServer.setMaxPlayers`: the live login limit, and `max-players` in
-    /// server.properties.
-    fn set_max_players(&mut self, state: &mut ServerState, max_players: usize) {
-        state.max_players = max_players;
-        if let Some(lan) = &self.lan {
-            lan.hub.lan.shared.set_max_players(max_players);
-        }
-        self.store_property("max-players", max_players.to_string());
-    }
-
-    /// `DedicatedServer.setAcceptsTransfers`: whether a transfer's handshake is accepted from
-    /// now on, and `accepts-transfers` in server.properties.
-    fn set_accepts_transfers(&mut self, accept: bool) {
-        if let Some(lan) = &self.lan {
-            lan.hub.lan.shared.set_accepts_transfers(accept);
-        }
-        self.store_property("accepts-transfers", accept.to_string());
-    }
-
-    /// `DedicatedServer.setEnforceWhitelist`: the flag, and `enforce-whitelist` in
-    /// server.properties.
-    pub(super) fn set_enforce_whitelist(&mut self, lists: &Arc<Mutex<Lists>>, on: bool) {
-        lists.lock().unwrap().enforce_whitelist = on;
-        self.store_property("enforce-whitelist", on.to_string());
-    }
-
-    /// `DedicatedServer.setPauseWhenEmptySeconds`: the live pause timer, and
-    /// `pause-when-empty-seconds` in server.properties.
-    fn set_pause_when_empty_seconds(&mut self, state: &mut ServerState, seconds: i32) {
-        state.pause_when_empty_seconds = seconds;
-        self.store_property("pause-when-empty-seconds", seconds.to_string());
-    }
-
     /// DedicatedServerSettings.update: change one key and store the file.
     pub(super) fn store_property(&mut self, key: &str, value: String) {
         let path = PathBuf::from("server.properties");
@@ -2853,25 +2792,6 @@ mod tests {
         });
     }
 
-    #[test]
-    #[ignore = "daily"]
-    fn console_and_management_ip_ban_sets_skip_fake_players() {
-        crate::game::native_guest_turn_tests::with_guests(|game| {
-            let level = game.level("minecraft:overworld").unwrap();
-            game.fake_player(level, 100, "robot").unwrap();
-            assert!(game.ip_ban_players("0.0.0.0").is_empty());
-            assert_eq!(game.ip_ban_players("127.0.0.1"), [12, 13]);
-            // Even with a matching real peer, the fake is not counted as affected.
-            game.lan
-                .as_mut()
-                .unwrap()
-                .hub
-                .update_guest(12, |guest| guest.address = "0.0.0.0:1".parse().unwrap())
-                .unwrap();
-            assert_eq!(game.ip_ban_players("0.0.0.0"), [12]);
-            assert_eq!(game.ip_ban_players("127.0.0.1"), [13]);
-        });
-    }
     #[test]
     fn entities_section_is_off_by_default_and_keeps_the_other_settings_keys() {
         use super::parse_entities;
@@ -3323,4 +3243,12 @@ mod console_source_tests {
         // The console's source is put back after each line.
         assert!(game.command_source.is_none());
     }
+}
+
+#[cfg(test)]
+/// Runs `f` and returns the lines it logged.
+fn capture_log(f: impl FnOnce()) -> Vec<String> {
+    CAPTURE.set(Some(Vec::new()));
+    f();
+    CAPTURE.take().unwrap_or_default()
 }

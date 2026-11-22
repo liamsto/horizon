@@ -474,53 +474,6 @@ impl Game<'_> {
         self.tick_remote_boat_bubbles();
     }
 
-    /// The boats, minecarts, armor stands, item frames and paintings in the
-    /// level (a server's client: the ones it was sent), for `status`.
-    pub(super) fn objects_status(&self) -> Vec<serde_json::Value> {
-        use serde_json::json;
-        let at = |p: Vec3| [p.x, p.y, p.z];
-        let mut out = Vec::new();
-        for b in &self.boats {
-            out.push(json!({"id": b.id, "kind": b.entity_type(), "position": at(b.position), "yaw": b.yaw}));
-        }
-        for c in &self.carts {
-            out.push(
-                json!({"id": c.id, "kind": c.kind.id(), "position": at(c.position), "yaw": c.yaw}),
-            );
-        }
-        for a in &self.armor_stands {
-            let items: Vec<_> = a
-                .equipment
-                .iter()
-                .map(|i| i.as_ref().map(|i| &*i.item))
-                .collect();
-            out.push(json!({"id": a.id, "kind": "minecraft:armor_stand", "position": at(a.position), "yaw": a.yaw,
-                "small": a.small, "arms": a.show_arms, "no_base_plate": a.no_base_plate, "equipment": items}));
-        }
-        for c in &self.cushions {
-            out.push(
-                json!({"id": c.id, "kind": "minecraft:cushion", "position": at(c.position),
-                "yaw": c.yaw, "color": c.color_name()}),
-            );
-        }
-        for (&id, i) in &self.interactions {
-            out.push(json!({"id": id, "kind": "minecraft:interaction",
-                "position": at(i.position), "width": i.width, "height": i.height,
-                "response": i.response}));
-        }
-        for f in &self.item_frames {
-            out.push(
-                json!({"id": f.id, "kind": f.kind(), "position": f.pos, "facing": f.facing,
-                "item": f.item.as_ref().map(|i| &*i.item), "rotation": f.rotation}),
-            );
-        }
-        for p in &self.paintings {
-            out.push(json!({"id": p.id, "kind": "minecraft:painting", "position": p.pos, "facing": p.facing,
-                "variant": &*p.variant}));
-        }
-        out
-    }
-
     /// Every object a server sent (a new connection, level or dimension).
     /// Experience orbs too: `ClientPacketListener.handleRespawn` replaces the
     /// `ClientLevel` on a dimension change, and `Hub::change_level` does not

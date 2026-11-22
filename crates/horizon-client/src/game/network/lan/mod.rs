@@ -1061,12 +1061,6 @@ fn mob_equipment(
     }
 }
 
-pub const HELP: &[&str] = &[
-    "lan open [PORT] [commands] [force]  open the world to the network (PORT 0 picks one)",
-    "lan close                      stop hosting",
-    "lan status                     the hosting state and the guests",
-];
-
 /// With the game mode forced, the guests online take the default mode
 /// (setting a mode does nothing when it is already theirs). A world open to
 /// LAN is an integrated server, which leaves out the players who have game
@@ -1113,92 +1107,6 @@ impl Game<'_> {
                     self.level.world_spawn_angle,
                 ));
             }
-        }
-    }
-
-    /// `horizon-ctl lan ...`.
-    pub(super) fn lan_control(&mut self, words: &[&str]) -> Result<Option<serde_json::Value>> {
-        use serde_json::json;
-        if words[0] != "lan" {
-            return Ok(None);
-        }
-        if let Some(server) = &self.integrated
-            && words.get(1) == Some(&"status")
-        {
-            // The hub is the server thread's.
-            let status = server
-                .call(|g| g.lan_status())
-                .ok_or(super::integrated::NO_ANSWER)?;
-            return Ok(Some(status));
-        }
-        match words.get(1).copied() {
-            Some("open") => {
-                if self.title.is_some() {
-                    return Err("open a world first".into());
-                }
-                let mut settings = control::open_settings(&words[2..])?;
-                if settings.port == 0 {
-                    settings.port = lan::available_port();
-                }
-                self.lan_open(settings)?;
-                Ok(Some(json!({ "ok": true, "port": self.lan_port() })))
-            }
-            Some("close") => {
-                self.lan_close(true);
-                Ok(Some(json!({ "ok": true })))
-            }
-            Some("status") => Ok(Some(self.lan_status())),
-            _ => Err("lan open|close|status|op".into()),
-        }
-    }
-
-    /// `horizon-ctl lan status`.
-    fn lan_status(&self) -> serde_json::Value {
-        use serde_json::json;
-        match &self.lan {
-            Some(h) if !self.serving() || self.published_port().is_some() => json!({
-                "open": true,
-                // The owner's profile name.
-                "host": self.options.player_name(),
-                "port": h.settings.port,
-                "guest_commands": h.hub.config.guest_commands,
-                "force_game_mode": h.hub.config.force_game_mode,
-                // The server's own world: its finished chunks and how many it
-                // has generated or loaded so far.
-                "world": {
-                    "chunks": self.world.chunks.len(),
-                    "generated": self.streaming.generated_total,
-                },
-                "guests": h.hub.guests.iter().map(|g| json!({
-                    "name": g.name,
-                    "position": g.position,
-                    "placed": g.placed,
-                    "loaded": g.loaded,
-                    "game_mode": g.game_mode,
-                    // ItemCooldowns: the ticks the shield an axe disabled stays down.
-                    "shield_cooldown": h.play.get(&g.conn).map_or(0, |p| p.shield_cooldown),
-                    // The item the server has this guest using: its slot and ticks.
-                    "using": h.play.get(&g.conn).and_then(|p| p.using())
-                        .map(|(slot, ticks)| json!({ "slot": slot, "ticks": ticks })),
-                    "sneaking": g.sneaking,
-                    // The server's Elytra glide (shared flag 7).
-                    "fall_flying": g.fall_flying,
-                    "sleeping": g.bed,
-                    "health": g.health,
-                    // The server's body: its air supply and golden hearts.
-                    "air": g.motion.as_ref().map(|m| m.air),
-                    "absorption": g.motion.as_ref().map(|m| m.health.absorption()),
-                    // FoodData: food level, saturation and exhaustion.
-                    "food": [
-                        f64::from(g.food),
-                        f64::from(g.saturation),
-                        g.motion.as_ref().map_or(0.0, |m| f64::from(m.health.food.exhaustion)),
-                    ],
-                    "chunks": g.sent_chunks.len(),
-                    "tracked": g.tracker.len(),
-                })).collect::<Vec<_>>(),
-            }),
-            _ => json!({ "open": false }),
         }
     }
 
@@ -1618,35 +1526,6 @@ impl Game<'_> {
         }
     }
 
-    /// The advancements and statistics files of a held arrival, before it is placed
-    /// (`player-confirm`): each through a new file, synced and renamed into place
-    /// (`save::write_durable`), so the reply's `ok` means both are on the disk whole.
-    pub(super) fn write_arrival_records(
-        &self,
-        host: &LanHost,
-        guest: &horizon_client::lan::guest::Guest,
-    ) -> std::result::Result<(), String> {
-        if self.adv.tree.list.is_empty() {
-            return Ok(());
-        }
-        let Some(uuid) = self.records_uuid(host, guest.uuid) else {
-            return Ok(());
-        };
-        let write = |dir: &str, json: &serde_json::Value| {
-            let path = super::stats::player_json(&self.world_root, dir, uuid);
-            super::stats::write_player_json(&path, json)
-        };
-        write(
-            "advancements",
-            &guest
-                .advancements
-                .to_json(&self.adv.tree, horizon_world::DATA_VERSION),
-        )?;
-        if let Some(play) = host.play.get(&guest.conn) {
-            write("stats", &play.stats.to_json())?;
-        }
-        Ok(())
-    }
     /// `PlayerAdvancements.load` and `ServerStatsCounter.parseLocal` of a
     /// network player who joined; every statistic goes out on the first
     /// request (`PlayerList.placeNewPlayer`'s `markAllDirty`).
@@ -1760,45 +1639,10 @@ impl Game<'_> {
         }
     }
 
-    /// Update the live spawn-protection radius.
-    pub(super) fn set_spawn_protection(&mut self, radius: i32) {
-        if let Some(host) = self.lan.as_mut() {
-            host.hub.spawn_protection = radius;
-        }
-    }
-
     /// Update the live simulation distance sent to player clients.
     pub(super) fn set_simulation_distance(&mut self, distance: i32) {
         if let Some(host) = self.lan.as_mut() {
             host.hub.set_simulation_distance(distance);
-        }
-    }
-
-    /// Update the live entity tracking range percentage.
-    pub(super) fn set_entity_broadcast_range_percentage(&mut self, percentage: i32) {
-        if let Some(host) = self.lan.as_mut() {
-            host.hub.entity_range_percent = percentage;
-        }
-    }
-
-    /// Update the live movement check's flight policy.
-    pub(super) fn set_allow_flight(&mut self, allow: bool) {
-        if let Some(host) = self.lan.as_mut() {
-            host.hub.config.allow_flight = allow;
-        }
-    }
-
-    /// Update whether status responses include online player names.
-    pub(super) fn set_hide_online_players(&mut self, hide: bool) {
-        if let Some(host) = self.lan.as_ref() {
-            host.hub.lan.shared.set_hide_online_players(hide);
-        }
-    }
-
-    /// Update whether the server answers connection status requests.
-    pub(super) fn set_status_replies(&mut self, enable: bool) {
-        if let Some(host) = self.lan.as_ref() {
-            host.hub.lan.shared.set_enable_status(enable);
         }
     }
 
@@ -6253,5 +6097,15 @@ mod merchant_packet_tests {
             assert_eq!(content.items[0].as_ref().unwrap().count, 4);
             assert_eq!(content.carried.as_ref().unwrap().count, 3);
         });
+    }
+}
+
+#[cfg(test)]
+impl Game<'_> {
+    /// Update the live spawn-protection radius.
+    pub(super) fn set_spawn_protection(&mut self, radius: i32) {
+        if let Some(host) = self.lan.as_mut() {
+            host.hub.spawn_protection = radius;
+        }
     }
 }

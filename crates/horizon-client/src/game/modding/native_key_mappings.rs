@@ -6,7 +6,7 @@ use super::Game;
 use super::key_codes::{gameplay_has_keyboard, glfw_modifiers};
 use horizon_client::keymapping::{KeyAction, MappingContext, ModBinding};
 use mod_api::KeyConflictContext;
-use winit::{event::MouseButton, keyboard::KeyCode};
+use winit::event::MouseButton;
 
 impl Game<'_> {
     /// Binds the mods' mappings to the player's keys (`horizon-mods.txt`) or their declared
@@ -59,38 +59,6 @@ impl Game<'_> {
         }
         let key = key.unwrap_or("key.keyboard.unknown");
         self.native_input_key(key, layout_key, raw_code, action, modifiers);
-    }
-    /// The control socket's `key KEY down|up|tap|repeat`, through `key_input` as a window key
-    /// goes: a tap is a press, then a release. A script types on a QWERTY layout.
-    pub(super) fn socket_key_input(&mut self, key: KeyCode, action: &str) {
-        let name = horizon_client::keybinds::key_name(key);
-        let layout_key = match key {
-            KeyCode::Backquote
-            | KeyCode::Minus
-            | KeyCode::Equal
-            | KeyCode::BracketLeft
-            | KeyCode::BracketRight
-            | KeyCode::Backslash
-            | KeyCode::IntlBackslash
-            | KeyCode::Semicolon
-            | KeyCode::Quote
-            | KeyCode::Comma
-            | KeyCode::Period
-            | KeyCode::Slash => None,
-            _ => name,
-        };
-        let raw_code =
-            horizon_client::keybinds::raw_key_code(winit::keyboard::PhysicalKey::Code(key));
-        let actions: &[mod_api::KeyAction] = match action {
-            "down" => &[mod_api::KeyAction::Press],
-            "repeat" => &[mod_api::KeyAction::Repeat],
-            "up" => &[mod_api::KeyAction::Release],
-            _ => &[mod_api::KeyAction::Press, mod_api::KeyAction::Release],
-        };
-        for action in actions {
-            let modifiers = glfw_modifiers(self.modifiers);
-            self.key_input(name, layout_key, raw_code, *action, modifiers);
-        }
     }
     /// The same as a key's for a mouse button (`MouseHandler.onButton`).
     pub(super) fn mod_mappings_button(&mut self, button: MouseButton, pressed: bool) {
@@ -162,8 +130,6 @@ mod tests {
                 false,
                 0,
             );
-            game.open_emote_wheel();
-            game.close_emote_wheel(None);
             assert!(!game.consume_click("test", "pending"));
         });
     }

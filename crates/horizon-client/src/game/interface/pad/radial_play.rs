@@ -8,7 +8,6 @@ use horizon_client::pad_glyph::Glyph;
 use horizon_client::text::Text;
 use horizon_client_input::radial::{self, RadialAction, Slot};
 use horizon_client_render::radial_overlay::{self, Dial, Seen, Toggles, View};
-use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
 /// The D-pad's buttons, which settle after the menu closes on a D-pad opener.
@@ -155,7 +154,7 @@ impl Game<'_> {
     /// when it runs.
     fn pad_radial_why(&self, action: RadialAction) -> Option<&'static str> {
         match action {
-            RadialAction::Emote if !super::super::cosmetics::enabled() => Some(WHY_COSMETICS),
+            RadialAction::Emote => Some(WHY_COSMETICS),
             RadialAction::QuickActions if !self.has_quick_actions() => Some(WHY_QUICK_ACTIONS),
             RadialAction::SocialInteractions if !self.is_multiplayer_server() => Some(WHY_SOCIAL),
             _ => None,
@@ -433,37 +432,6 @@ impl Game<'_> {
     pub(in crate::game) fn pad_player_replaced(&mut self) {
         self.pad.player_replaced();
         self.pad_radial_cancel();
-    }
-
-    pub(in crate::game) fn pad_radial_status(&self) -> Value {
-        let menu = &self.pad.radial;
-        let pages = &self.settings.controller.radial;
-        let page = pages.page(menu.page());
-        json!({
-            "open": menu.is_open(),
-            "latched": menu.latched(),
-            "page": menu.page(),
-            "pages": pages.len(),
-            "name": horizon_client_render::radial_overlay::page_label(page),
-            "slots": page.slots().map(|slot| (!slot.is_empty()).then(|| slot.id())),
-            "available": self.pad_radial_available(),
-            "selected": menu.selected(),
-            "aimed": menu.aimed(),
-            "shown": menu.shown(Instant::now()),
-            "drawn": self.pad_radial_drawn(self.hud_clock()).is_some(),
-            // The overlay's glyphs as the player sees them: the bumpers that turn the pages and
-            // the button that cancels, by their printed labels.
-            "glyphs": {
-                "pages": self.pad_radial_page_keys().map(|key| key.map(|glyph| glyph.label())),
-                "cancel": self.menu_glyph(MenuJob::Back).label(),
-            },
-            "waiting": menu.waiting(),
-            "selecting": self.pad_radial_selector().0,
-            "mode": self.settings.controller.radial_mode.name(),
-            "stick": self.settings.controller.radial_stick.name(),
-            "runs": self.pad.radial_runs.last,
-            "run_count": self.pad.radial_runs.count,
-        })
     }
 
     /// What the pad draws over the HUD, last: the radial menu, then the pad's cursor or focus

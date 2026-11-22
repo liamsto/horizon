@@ -15,10 +15,7 @@ impl Game<'_> {
     /// sequence) or a repro recording or replay runs.
     pub(super) fn hud_clock(&self) -> Clock {
         let still = self.pause
-            || self.clock.still()
-            || self.screenshot_sequence.is_some()
-            || self.repro.recording_active()
-            || self.repro.replaying();
+            || self.clock.still();
         Clock::new(std::time::Instant::now(), still)
     }
 

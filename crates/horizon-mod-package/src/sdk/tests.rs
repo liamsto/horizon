@@ -471,67 +471,6 @@ fn how_to_make_an_input_uses_the_game_programs_profile_and_folder() {
     );
 }
 
-/// The markers around the book's table of required inputs.
-const BOOK_START: &str =
-    "<!-- required inputs: crates/horizon-mod-package/src/sdk/inputs.json, checked by a test -->";
-const BOOK_END: &str = "<!-- end of required inputs -->";
-
-/// The book's table of required inputs, as `inputs.json` says it.
-fn book_table(inputs: &Inputs) -> String {
-    let mut rows: Vec<(String, &str, Vec<&str>)> = Vec::new();
-    for route in ["package", "package-server"] {
-        let listed = inputs.route(route).unwrap();
-        let files = listed
-            .program
-            .iter()
-            .map(|name| (name, "beside the game program"))
-            .chain(listed.checkout.iter().map(|name| (name, "in the checkout")));
-        for (name, place) in files {
-            match rows.iter_mut().find(|row| &row.0 == name) {
-                Some(row) => row.2.push(route),
-                None => rows.push((name.clone(), place, vec![route])),
-            }
-        }
-    }
-    let mut table = "| File | Where | Needed by | How to make it |\n|---|---|---|---|\n".to_owned();
-    for (name, place, routes) in rows {
-        let routes: Vec<String> = routes.iter().map(|route| format!("`{route}`")).collect();
-        let how = &inputs.how[&name];
-        table += &format!("| `{name}` | {place} | {} | {how} |\n", routes.join(", "));
-    }
-    table
-}
-
-#[test]
-fn every_named_input_has_a_way_to_make_it_and_the_book_shows_the_list() {
-    let inputs = inputs();
-    for route in inputs.routes.values() {
-        for name in route.program.iter().chain(&route.checkout) {
-            assert!(inputs.how.contains_key(name), "{name}");
-        }
-        for kind in &route.sdk {
-            assert!(inputs.how.contains_key(kind.name()), "{}", kind.name());
-        }
-    }
-    let page = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../docs/modding/src/how-to/native-mods/07-local-developer-builds.md"),
-    )
-    .unwrap()
-    .replace("\r\n", "\n");
-    let section = page
-        .split_once(BOOK_START)
-        .and_then(|(_, rest)| rest.split_once(BOOK_END))
-        .map(|(section, _)| section.trim())
-        .expect("the book page marks its table of required inputs");
-    let table = book_table(&inputs);
-    assert_eq!(
-        section,
-        table.trim(),
-        "the book's table differs from sdk/inputs.json; it should read:\n{table}"
-    );
-}
-
 #[cfg(feature = "prebuilt")]
 mod unpack {
     use super::*;

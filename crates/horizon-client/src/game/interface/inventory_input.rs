@@ -332,17 +332,6 @@ impl Game<'_> {
         self.modifiers.control_key()
     }
 
-    /// Real events word the modifiers by their own `ModifiersChanged`; a
-    /// control socket's `key` is synthesized, so it words the bit directly
-    /// and every reader can ask the one live state.
-    pub(super) fn press_modifier_key(&mut self, key: KeyCode, down: bool) {
-        horizon_client_input::modifiers::set_key(
-            &mut self.modifiers,
-            &mut self.physical_keys,
-            key,
-            down,
-        );
-    }
     /// `hasClickedOutside` of the open screen at the cursor.
     pub(super) fn clicked_outside(&self, batch: &HudBatch) -> bool {
         use horizon_client::container_screen::{Book, clicked_outside};

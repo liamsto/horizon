@@ -1501,20 +1501,6 @@ impl Game<'_> {
     }
 }
 impl Game<'_> {
-    /// The hooks drawn here, with their owners' ids (0 for this player's own).
-    pub(super) fn hooks_status(&self) -> Vec<serde_json::Value> {
-        let at = |p: Vec3| [p.x, p.y, p.z];
-        let own = self.hook.iter().map(|h| (h.id, 0, h.position));
-        let others = self
-            .remote_hooks
-            .iter()
-            .map(|h| (h.id, h.owner, h.position));
-        own.chain(others)
-            .map(|(id, owner, p)| {
-                serde_json::json!({"id": id, "kind": "minecraft:fishing_bobber", "owner": owner, "position": at(p)})
-            })
-            .collect()
-    }
     /// The cast hooks of the level in place and who cast each: the player in
     /// place, then the guests here. A guest displaced by a nested swap holds
     /// someone else's hook for the moment, so theirs is left out.
@@ -1599,18 +1585,6 @@ impl Game<'_> {
         } else if let Some(play) = caster.and_then(|conn| self.lan.as_mut()?.play.get_mut(&conn)) {
             play.hook.discard();
         }
-    }
-    /// The hook for `horizon-ctl status`.
-    pub(super) fn hook_status(&self) -> Option<serde_json::Value> {
-        let h = self.hook.as_ref()?;
-        Some(serde_json::json!({
-            "state": format!("{:?}", h.state),
-            "nibble": h.nibble,
-            "lured_in": h.time_until_lured,
-            "hooked_in": h.time_until_hooked,
-            "open_water": h.open_water,
-            "loot_table": h.medium.as_ref().and_then(|m| m.loot_table.clone()),
-        }))
     }
 }
 

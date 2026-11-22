@@ -12,7 +12,6 @@ pub mod follow;
 mod health;
 pub mod ids;
 mod inflate;
-pub mod mcp;
 pub mod names;
 pub mod ops;
 pub mod query;
@@ -22,8 +21,6 @@ pub mod samples;
 pub mod stats;
 pub mod summary;
 pub mod view;
-#[cfg(feature = "wasm")]
-pub mod wasm;
 pub mod watch;
 pub mod wire;
 

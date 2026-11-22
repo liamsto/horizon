@@ -10,9 +10,9 @@ use horizon_core::position::ChunkPos;
 use mod_api::{
     Block, BlockPart, BlockState, BlocksEvent, EntityRef, ExplosionInteraction,
     ExplosionResistance::{self, NoResistance, Resists, Unavailable},
-    ExplosionResistanceEvent, HostBlockStates, LevelHost, LevelRef, ModEntry, Registrar,
+    ExplosionResistanceEvent, HostBlockStates, LevelHost, ModEntry, Registrar,
     RegistrationContext, ResistanceCells, ResistanceCellsError,
-    wire::{Reader, Wire, Writer},
+    wire::{Reader, Writer},
 };
 use std::sync::{
     Arc,
@@ -23,16 +23,14 @@ use std::sync::{
 #[derive(Clone, Copy, Debug)]
 pub(in crate::game) enum Via {
     Native,
-    Wasm,
 }
-pub(in crate::game) const BOTH: [Via; 2] = [Via::Native, Via::Wasm];
+pub(in crate::game) const BOTH: [Via; 1] = [Via::Native];
 impl Via {
     /// How many times one read reaches the game: a wasm read is checked against the native
     /// answer to the same call, so it reads twice.
     fn reads(self) -> i32 {
         match self {
             Via::Native => 1,
-            Via::Wasm => 2,
         }
     }
 }
@@ -126,27 +124,20 @@ fn row(game: &mut Game<'_>) {
 /// A sourceless block blast of radius 4 at the row, read through `via`.
 fn read(
     game: &mut Game<'_>,
-    via: Via,
+    _via: Via,
     pos: [i32; 3],
     source: Option<EntityRef>,
 ) -> Option<ExplosionResistance> {
     let level = game.level("minecraft:overworld").unwrap();
     let (center, radius, fire, interaction) = blast();
     let native = level.explosion_resistance(game, pos, source, center, radius, fire, interaction);
-    if let Via::Wasm = via {
-        let mut input = Writer::new();
-        input.put(&level);
-        input.put(&pos);
-        put_blast(&mut input, source);
-        wasm_answer(game, level, "level_explosion_resistance", input, &native);
-    }
     native
 }
 
 /// `read` for every cell of `cells`.
 fn reads(
     game: &mut Game<'_>,
-    via: Via,
+    _via: Via,
     cells: &ResistanceCells,
     source: Option<EntityRef>,
 ) -> Result<Vec<ExplosionResistance>, ResistanceCellsError> {
@@ -154,118 +145,11 @@ fn reads(
     let (center, radius, fire, interaction) = blast();
     let native =
         level.explosion_resistances(game, cells, source, center, radius, fire, interaction);
-    if let Via::Wasm = via {
-        let mut input = Writer::new();
-        input.put(&level);
-        input.put(cells);
-        put_blast(&mut input, source);
-        wasm_answer(game, level, "level_explosion_resistances", input, &native);
-    }
     native
 }
 
 fn blast() -> ([f64; 3], f32, bool, ExplosionInteraction) {
     ([4.5, 80.5, 1.5], 4.0, false, ExplosionInteraction::Block)
-}
-
-fn put_blast(input: &mut Writer, source: Option<EntityRef>) {
-    let (center, radius, fire, interaction) = blast();
-    input.put(&source);
-    input.put(&center);
-    input.put(&radius);
-    input.put(&fire);
-    input.put(&interaction);
-}
-
-/// A guest whose server tick calls host row `name` with `input` through its import and answers
-/// the tick only when the host's answer is `expected`, byte for byte (it traps otherwise). The
-/// wasm answer is thus the native one.
-pub(in crate::game) fn wasm_answer<T: Wire>(
-    game: &mut Game<'_>,
-    level: LevelRef,
-    name: &str,
-    input: Writer,
-    expected: &T,
-) {
-    let owner = if name.starts_with("level_") {
-        "BackendMut"
-    } else {
-        "Backend"
-    };
-    let mut answer = Writer::new();
-    answer.put(expected);
-    let mut reply = Writer::new();
-    reply.put(&mod_api::ServerTickPhase::ServerTickEnd {
-        world_running: true,
-    });
-    let escape = |bytes: &[u8]| {
-        bytes
-            .iter()
-            .map(|b| format!("\\{b:02x}"))
-            .collect::<String>()
-    };
-    let check = answer
-        .bytes()
-        .iter()
-        .enumerate()
-        .map(|(i, byte)| {
-            format!(
-                "i32.const {} i32.load8_u i32.const {byte} i32.ne if unreachable end ",
-                32768 + i
-            )
-        })
-        .collect::<String>();
-    let id = horizon_mod_wasm::fixture::import_id(owner, name).unwrap();
-    let bytes = wat::parse_str(horizon_mod_wasm::fixture::by_name(&format!(
-        r#"(module
-          (@custom "dylink.0" "\01\04\00\00\00\00")
-          (import "env" "memory" (memory 1))
-          (import "env" "__indirect_function_table" (table 1 funcref))
-          (import "horizon" "host" (func $host (param i32 i32 i32 i32 i32) (result i32)))
-          (import "horizon" "host_reply" (func (param i32)))
-          (func (export "horizon_layout") (result i64) i64.const {layout})
-          (data $input "{input}")
-          (data (i32.const 16384) "{reply}")
-          (func (export "horizon_in") (param i32) (result i32) i32.const 512)
-          (func (export "horizon_hook") (param i32) (result i64)
-            i32.const {pages} memory.grow drop
-            i32.const {input_at} i32.const 0 i32.const {input_len} memory.init $input
-            i32.const {id} i32.const {input_at} i32.const {input_len} i32.const 32768 i32.const 8192 call $host drop
-            {check}
-            i64.const {reply_at}))"#,
-        layout = *mod_api::wire::LAYOUT,
-        // The input goes after the memory the group already has, grown to hold it: the first
-        // page holds the reply and the answer.
-        pages = 1 + input.bytes().len() / 65536,
-        input_at = 4 * 65536,
-        input = escape(input.bytes()),
-        reply = escape(reply.bytes()),
-        input_len = input.bytes().len(),
-        reply_at = (16384u64 << 32) | reply.bytes().len() as u64,
-    ), &[(owner, name)]))
-    .unwrap();
-    let module = horizon_mod_wasm::fixture::module(&bytes).unwrap();
-    let mut context = Writer::new();
-    context.put(&mod_api::Authority::DedicatedServer);
-    context.put(&level.epoch());
-    context.put(&mod_api::TickId::new(1));
-    let context: mod_api::LifecycleContext = Reader::new(context.bytes()).take().unwrap();
-    let mut tick = mod_api::ServerTickEvent {
-        context: &context,
-        phase: mod_api::ServerTickPhase::ServerTickStart {
-            world_running: true,
-        },
-    };
-    mod_api::Hooks::server_tick(&module, game, &mut tick);
-    assert!(
-        matches!(
-            tick.phase,
-            mod_api::ServerTickPhase::ServerTickEnd {
-                world_running: true
-            }
-        ),
-        "the guest's {name} answer differed from the native one"
-    );
 }
 
 /// Runs `test` on a fresh game with the resisting mod, for each target.
@@ -304,7 +188,7 @@ fn each_target(test: impl Fn(&mut Game<'_>, Via, &Resisting) + Send + Sync + 'st
 #[ignore = "daily"]
 fn a_block_state_reads_the_resistance_its_block_declares() {
     each_target(|game, via, _| {
-        let level = game.level("minecraft:overworld").unwrap();
+        let _level = game.level("minecraft:overworld").unwrap();
         let states: Vec<Option<BlockState>> = [
             "minecraft:stone",
             "minecraft:obsidian",
@@ -318,17 +202,6 @@ fn a_block_state_reads_the_resistance_its_block_declares() {
         .collect();
         let read = |game: &mut Game<'_>, state: BlockState| {
             let native = game.block_states().explosion_resistance(state);
-            if let Via::Wasm = via {
-                let mut input = Writer::new();
-                input.put(&state);
-                wasm_answer(
-                    game,
-                    level,
-                    "block_state_explosion_resistance",
-                    input,
-                    &native,
-                );
-            }
             native
         };
         let got: Vec<Option<f32>> = states.into_iter().map(|s| read(game, s.unwrap())).collect();
@@ -526,17 +399,6 @@ fn read_and_blast(
                 false,
                 ExplosionInteraction::Block,
             );
-            if let Via::Wasm = via {
-                let mut input = Writer::new();
-                input.put(&level);
-                input.put(&at);
-                input.put(&source);
-                input.put(&center);
-                input.put(&2.0f32);
-                input.put(&false);
-                input.put(&ExplosionInteraction::Block);
-                wasm_answer(game, level, "level_explosion_resistance", input, &native);
-            }
             native
         };
         game.world.set(at[0], at[1], at[2], block).unwrap();
@@ -555,23 +417,6 @@ fn read_and_blast(
                 ),
                 Ok(())
             ),
-            Via::Wasm => {
-                let mut input = Writer::new();
-                input.put(&level);
-                input.put(&source);
-                input.put(&center);
-                input.put(&2.0f32);
-                input.put(&false);
-                input.put(&ExplosionInteraction::Block);
-                input.put(&settings);
-                wasm_answer(
-                    game,
-                    level,
-                    "level_explode",
-                    input,
-                    &Ok::<(), mod_api::ExplodeError>(()),
-                );
-            }
         }
         let survived = game.world.block(at[0], at[1], at[2]) == block;
         assert_eq!(

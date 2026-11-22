@@ -8,6 +8,7 @@ description = "The client's input layer: key bindings and their names, mouse, co
 
 [dependencies]
 horizon-mod-api-macros = { path = "../horizon-mod-api-macros" }
+# Not named in code: the mod-point generator (horizon-engine-slots/build.rs) requires it of a crate with points.
 horizon-engine-slots = { path = "../horizon-engine-slots" }
 horizon-client-core = { path = "../horizon-client-core" }
 horizon-hooks = { path = "../horizon-hooks" }

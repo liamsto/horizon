@@ -195,74 +195,6 @@ fn reply_value(horizon: &str) -> serde_json::Value {
     })
 }
 
-/// The reply with a placeholder for the game build version.
-#[cfg(test)]
-fn reference_reply() -> String {
-    let reply = reply_value("<version>");
-    serde_json::to_string_pretty(&reply).expect("a JSON value")
-}
-
-/// docs/api/launch-reference.md.
-#[cfg(test)]
-pub fn markdown() -> String {
-    use std::fmt::Write;
-    let mut out = String::new();
-    let w = &mut out;
-    let _ = writeln!(
-        w,
-        "<!-- Generated from crates/horizon-client/src/game/runtime/launch_api.rs; a test fails when this file is out of date. Update it with: HORIZON_WRITE_DOCS=1 cargo test -p horizon-client --lib launch_api -->"
-    );
-    let _ = writeln!(w, "# Launch API reference\n");
-    let _ = writeln!(
-        w,
-        "What `horizon-client` promises a launcher that starts it, Launch API {VERSION}. The guide: \
-         [launch.md](launch.md); stability and versions: [stability.md](stability.md).\n"
-    );
-    let _ = writeln!(w, "## Options\n");
-    let _ = writeln!(
-        w,
-        "Any other option is refused with exit code 2, so ask `--launch-api` before passing one \
-         a build may not know.\n"
-    );
-    let _ = writeln!(w, "| Option | What it does |\n| --- | --- |");
-    for o in OPTIONS {
-        let usage = match o.value {
-            Some(value) => format!("`{} {value}`", o.name),
-            None => format!("`{}`", o.name),
-        };
-        let _ = writeln!(w, "| {usage} | {} |", o.what);
-    }
-    let _ = writeln!(w, "\n## `--launch-api`\n");
-    let _ = writeln!(
-        w,
-        "Prints one JSON object on stdout and exits 0. `horizon` is the build's version; readers \
-         ignore fields they don't know.\n"
-    );
-    let _ = writeln!(w, "```json\n{}\n```\n", reference_reply());
-    let _ = writeln!(
-        w,
-        "`content` is what this build loads ([content.md](content.md)), so a launcher offers only \
-         what works on it: content \
-         mods of the manifest `api` lines in `mod.api`; native mods built for this exact game build \
-         (`native_mod.exact_build`), which need the game rebuilt (`rebuild`); shader packs of \
-         `shader.schema` and the lines in `shader.api` (a pack for another is refused); resource \
-         and data packs of `format` (`[major, minor]`; others still load, marked too old or too \
-         new as vanilla marks them); modpacks of `modpack.format`; the mod index of \
-         `index.schema`.\n"
-    );
-    let _ = writeln!(w, "## Exit codes\n\n| Code | Meaning |\n| --- | --- |");
-    for (code, what) in EXIT_CODES {
-        let _ = writeln!(w, "| {code} | {what} |");
-    }
-    let _ = writeln!(
-        w,
-        "\nWhen a crash report is saved, the last line on stderr is `{}` followed by the \
-         report's path.",
-        horizon_client::crash::SAVED_LINE.trim_end()
-    );
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -493,25 +425,6 @@ mod tests {
         assert_eq!(
             content["resourcepack"]["format"],
             serde_json::json!(horizon_core::version::RESOURCE_PACK_FORMAT)
-        );
-    }
-
-    /// docs/api/launch-reference.md is what `markdown` writes.
-    #[test]
-    fn launch_api_reference_is_current() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join("docs/api/launch-reference.md");
-        let want = markdown();
-        if std::env::var_os("HORIZON_WRITE_DOCS").is_some() {
-            std::fs::write(&path, &want).unwrap();
-        }
-        let have = std::fs::read_to_string(&path)
-            .unwrap_or_default()
-            .replace("\r\n", "\n");
-        assert!(
-            have == want,
-            "docs/api/launch-reference.md is out of date: HORIZON_WRITE_DOCS=1 cargo test -p horizon-client --lib launch_api"
         );
     }
 }

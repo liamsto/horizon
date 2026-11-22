@@ -17,7 +17,6 @@ winresource = "0.1"
 
 [dependencies]
 horizon-guest-stack = { path = "../horizon-guest-stack" }
-horizon-cosmetics = { path = "../horizon-cosmetics" }
 horizon-hooks = { path = "../horizon-hooks" }
 horizon-mod-runtime = { path = "../horizon-mod-runtime" }
 mod_api = { package = "horizon-mod-vocab", path = "../horizon-mod-vocab" }
@@ -53,8 +52,6 @@ horizon-chat-filter = { path = "../horizon-chat-filter" }
 horizon-shaders = { path = "../horizon-shaders" }
 # Horizon's own shader packs: the format, the stages and the check (docs/shaders.md).
 horizon-shader-api = { path = "../horizon-shader-api" }
-# Play with Friends: invite codes and their tunnel; the `friends` feature.
-horizon-friends = { path = "../horizon-friends", optional = true }
 # The narrator (GameNarrator): text-to-speech of chat, system messages and screens.
 horizon-narrator = { path = "../horizon-narrator" }
 # Horizon mods: sandboxed WebAssembly components, off unless installed and turned on (docs/modding/src/how-to/content-mods.md).
@@ -83,9 +80,6 @@ flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs", 
 horizon-theme = { path = "../horizon-theme" }
 # Machine and process probes for benchmark and dedicated-server performance reports.
 horizon-system = { path = "../horizon-system" }
-# Opt-in data collection: the game keeps, the launcher sends (docs/telemetry.md). The
-# anonymous "I'm playing" ping is the Horizon layer's (`horizon-heartbeat`, in the official executable).
-horizon-telemetry = { path = "../horizon-telemetry", default-features = false }
 horizon-bench = { path = "../horizon-bench" }
 crc32fast = "1"
 zip = { version = "9.1.3", default-features = false, features = ["deflate"] }
@@ -131,7 +125,7 @@ wgpu = { version = "30.0.1", default-features = false, features = ["gles"] }
 # Source retention only: not compiled/tested on the fork; incompatible with typed residency.
 # Do not enable (including via --all-features); integration is tracked in arismoko/horizon#3491.
 upstream-parallel-mobs = ["horizon-gameplay/upstream-parallel-mobs"]
-default = ["audio", "controllers", "horizon-extras"]
+default = ["audio", "controllers"]
 # Scoped trait-mod installation for a mod's own tests.
 testing = []
 # Per-level-tick state digest for determinism checks (game/state_digest.rs).
@@ -148,10 +142,7 @@ controllers = ["horizon-client-lib/controllers", "dep:gilrs", "dep:horizon-duals
 # them; there is no switch. `grep -rn horizon-extras crates/` lists
 # every place it gates. Without it (`--no-default-features --features audio,controllers`) the
 # client is best effort: CI builds only the default.
-horizon-extras = ["friends"]
-# Play with Friends: sharing a world behind an invite code (game/friends.rs). Joining one is
-# horizon-friends' `game` side, which horizon-official registers (`horizon_hooks::tunnel`).
-friends = ["dep:horizon-friends"]
+horizon-extras = []
 # Records the call sites of mob random draws (`mob_ai_probe` traces).
 rng-trace = ["horizon-core/rng-trace", "horizon-client-lib/rng-trace"]
 # horizon-client-lib's own `default` (only `audio` and `controllers`, which `audio` and `controllers` above turn on
@@ -182,8 +173,6 @@ workspace = true
 [dev-dependencies]
 horizon-client-core = { path = "../horizon-client-core", features = ["test-language-publication"] }
 horizon-client-lib = { path = "../horizon-client-lib", default-features = false, features = ["test-payload-probe", "test-publication-scope", "test-residency-observer"] }
-horizon-mod-wasm = { path = "../horizon-mod-wasm", features = ["runtime-fixture", "listener-fixture", "test-copy-probe"] }
-wat = "1.261"
 tempfile = "3"
 horizon-mod-runtime = { path = "../horizon-mod-runtime", features = ["test-work-count"] }
 horizon-threads = { path = "../horizon-threads", features = ["test-allocation-count"] }

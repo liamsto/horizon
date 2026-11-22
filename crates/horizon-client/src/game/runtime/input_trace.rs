@@ -9,9 +9,8 @@
 //! The events are also what a repro recording writes to `inputs.jsonl`
 //! (game/runtime/repro.rs).
 use super::{Game, Screen};
-use horizon_client::{Result, keybinds};
+use horizon_client::keybinds;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 use std::{
     collections::VecDeque,
     sync::mpsc::Sender,
@@ -21,10 +20,6 @@ use winit::{
     event::{ElementState, MouseScrollDelta, WindowEvent},
     keyboard::PhysicalKey,
 };
-
-pub(super) const HELP: &[&str] = &[
-    "input-log [--since SEQ] [--limit N] [--origin user|agent|game]  recent input and who caused it",
-];
 
 /// Input events kept for `input-log`.
 const KEPT: usize = 512;
@@ -46,23 +41,8 @@ pub(super) enum InputOrigin {
 }
 
 impl InputOrigin {
-    pub(super) fn name(self) -> &'static str {
-        match self {
-            InputOrigin::User => "user",
-            InputOrigin::Agent => "agent",
-            InputOrigin::Game => "game",
-        }
-    }
     fn index(self) -> usize {
         self as usize
-    }
-    fn parse(name: &str) -> Option<Self> {
-        match name {
-            "user" => Some(InputOrigin::User),
-            "agent" => Some(InputOrigin::Agent),
-            "game" => Some(InputOrigin::Game),
-            _ => None,
-        }
     }
 }
 
@@ -120,87 +100,6 @@ pub(super) enum TraceKind {
 }
 
 impl TraceKind {
-    pub(super) fn name(&self) -> &'static str {
-        match self {
-            TraceKind::Key { .. } => "key",
-            TraceKind::Mouse { .. } => "mouse",
-            TraceKind::Wheel { .. } => "wheel",
-            TraceKind::Cursor { .. } => "cursor",
-            TraceKind::Motion { .. } => "motion",
-            TraceKind::Pad { .. } => "pad",
-            TraceKind::Command { .. } => "command",
-        }
-    }
-}
-
-/// Commands that only read. Polling them must not flood the ring or make an
-/// agent that is merely watching look like it acted.
-const READ_ONLY: &[&str] = &[
-    "state",
-    "status",
-    "events",
-    "wait-for",
-    "input-log",
-    "record-status",
-    "record-list",
-    "looking-at",
-    "entities",
-    "block",
-    "blocks",
-    "light",
-    "inventory",
-    "screen",
-    "menu",
-    "messages",
-    "worlds",
-    "servers",
-    "options-get",
-    "stats",
-    "logs",
-    "ui",
-];
-
-/// Commands that steer the session rather than the game: recording them as
-/// input would put `record-stop` in a replay it must not run.
-const SESSION: &[&str] = &[
-    "record-start",
-    "record-stop",
-    "record-replay",
-    "repro-export",
-    "quit",
-    "launch",
-    "mcp",
-    "bench",
-    "sleep",
-];
-
-/// Lines whose arguments can carry someone's data: the trace keeps the command
-/// name and drops the rest.
-const PRIVATE_ARGUMENTS: &[&str] = &[
-    "chat", "command", "type", "signedit", "connect", "book", "publish",
-];
-
-/// Whether `line` only reads.
-fn is_read_only(line: &str) -> bool {
-    line.split_whitespace()
-        .next()
-        .is_some_and(|name| READ_ONLY.contains(&name))
-}
-
-/// Whether `line` steers the session, not the game.
-fn is_session_command(line: &str) -> bool {
-    line.split_whitespace()
-        .next()
-        .is_some_and(|name| SESSION.contains(&name))
-}
-
-/// The line as the trace keeps it: a command whose arguments are private loses
-/// them (`chat <redacted>`).
-fn redact_command(line: &str) -> String {
-    match line.split_whitespace().next() {
-        Some(name) if PRIVATE_ARGUMENTS.contains(&name) => format!("{name} <redacted>"),
-        _ => line.to_owned(),
-    }
 }
 
 /// The recent input, the counters and the recording's line writer.
@@ -296,115 +195,16 @@ impl InputTrace {
         intrusion
     }
 
-    /// An agent line that is not input (a poll, a wait): it still means an
-    /// agent is watching, so a person's next key is an intrusion.
-    pub(super) fn agent_activity(&mut self) {
-        if self.suppress {
-            return;
-        }
-        self.last_agent = Some(Instant::now());
-        self.user_since_agent = 0;
-    }
-
-    /// The `input` section of `state` and `status`.
-    pub(super) fn summary(&self) -> Value {
-        json!({
-            "last_origin": self.last.map(InputOrigin::name),
-            "counts": {
-                "user": self.counts[InputOrigin::User.index()],
-                "agent": self.counts[InputOrigin::Agent.index()],
-                "game": self.counts[InputOrigin::Game.index()],
-            },
-            "user_since_agent": self.user_since_agent,
-            "last_user_age_s": self
-                .last_user
-                .map(|t| (t.elapsed().as_secs_f64() * 10.0).round() / 10.0),
-            "events": self.seq,
-        })
-    }
-
-    /// Start writing the events to a recording.
-    pub(super) fn start_file(&mut self, writer: Sender<String>) {
-        self.writer = Some(writer);
-        self.written = 0;
-    }
-    /// Stop writing; how many events the recording received.
-    pub(super) fn stop_file(&mut self) -> u64 {
-        self.writer = None;
-        std::mem::take(&mut self.written)
-    }
-    /// How many events this run has seen.
-    pub(super) fn events(&self) -> u64 {
-        self.seq
-    }
-    /// A replay's own events are not new input.
-    pub(super) fn set_suppress(&mut self, suppress: bool) {
-        self.suppress = suppress;
-    }
-
-    /// `input-log`.
-    pub(super) fn command(&self, words: &[&str]) -> Result<Option<Value>> {
-        if words[0] != "input-log" {
-            return Ok(None);
-        }
-        let mut since = 0;
-        let mut limit = usize::MAX;
-        let mut origin = None;
-        let mut i = 1;
-        while i < words.len() {
-            let value = words
-                .get(i + 1)
-                .ok_or_else(|| format!("{} takes a value", words[i]))?;
-            match words[i] {
-                "--since" => since = value.parse().map_err(|_| "--since takes a number")?,
-                "--limit" => limit = value.parse().map_err(|_| "--limit takes a number")?,
-                "--origin" => {
-                    origin = Some(
-                        InputOrigin::parse(value).ok_or("--origin takes user, agent or game")?,
-                    )
-                }
-                other => return Err(format!("input-log: unknown argument {other}").into()),
-            }
-            i += 2;
-        }
-        let mut events: Vec<&TraceEvent> = self
-            .log
-            .iter()
-            .filter(|e| e.seq > since && origin.is_none_or(|o| e.origin == o))
-            .collect();
-        if events.len() > limit {
-            events.drain(..events.len() - limit);
-        }
-        Ok(Some(json!({
-            "events": events,
-            "last": self.seq,
-            "input": self.summary(),
-        })))
-    }
 }
 
 impl Game<'_> {
-    /// An agent's control line: input unless it only reads, which still counts
-    /// as the agent watching.
-    pub(super) fn note_socket_line(&mut self, line: &str) {
-        if is_read_only(line) || is_session_command(line) {
-            self.input_trace.agent_activity();
-            return;
-        }
-        self.note_input(
-            InputOrigin::Agent,
-            TraceKind::Command {
-                line: redact_command(line),
-            },
-        );
-    }
 
     /// Whether anything can read the trace: the control socket (agent control
     /// on), the repro shortcuts, or a recording under way. Otherwise every key
     /// and mouse motion skips it, so a player who uses none of them pays
     /// nothing per input event.
     fn tracing_input(&self) -> bool {
-        self.control.is_some() || self.settings.extras.repro_keys || self.repro.recording_active()
+        false
     }
 
     /// Record an input event and, when a person steps into an agent's run, tell
@@ -413,24 +213,7 @@ impl Game<'_> {
         if !self.tracing_input() {
             return;
         }
-        let kind_name = kind.name();
-        // An agent waiting on a task or a wait, or a client still connected, is
-        // watching even when its last line was minutes ago.
-        let agent_active = self.control.as_ref().is_some_and(|c| c.clients() > 0)
-            || self.agent_busy()
-            || self.events.has_waits();
-        if self
-            .input_trace
-            .record(self.ticks, origin, kind, agent_active)
-        {
-            let event = json!({ "event": "user-input", "input": kind_name });
-            self.repro.note_event(self.ticks, &event);
-            self.events.note(self.ticks, event);
-            log::info!(
-                "Horizon: {kind_name} input from a person while an agent was driving \
-                 (input-log has the run)"
-            );
-        }
+        self.input_trace.record(self.ticks, origin, kind, false);
     }
 
     /// Keep the window events that are input. Agent-made window events are left
@@ -515,14 +298,6 @@ mod tests {
     }
 
     #[test]
-    fn origins_round_trip() {
-        for origin in [InputOrigin::User, InputOrigin::Agent, InputOrigin::Game] {
-            assert_eq!(InputOrigin::parse(origin.name()), Some(origin));
-        }
-        assert_eq!(InputOrigin::parse("nobody"), None);
-    }
-
-    #[test]
     fn the_ring_keeps_the_newest_and_counts_every_origin() {
         let mut trace = InputTrace::default();
         for i in 0..=(KEPT as u64 + 10) {
@@ -535,125 +310,12 @@ mod tests {
     }
 
     #[test]
-    fn a_person_after_an_agent_is_an_intrusion_once() {
-        let mut trace = InputTrace::default();
-        trace.record(1, InputOrigin::Agent, key("key.keyboard.w"), false);
-        assert!(trace.record(2, InputOrigin::User, key("key.keyboard.a"), false));
-        // The quiet period keeps a held key from flooding the event log.
-        assert!(!trace.record(3, InputOrigin::User, key("key.keyboard.a"), false));
-        assert_eq!(trace.user_since_agent, 2);
-        // An agent command resets the count.
-        trace.record(4, InputOrigin::Agent, key("key.keyboard.w"), false);
-        assert_eq!(trace.user_since_agent, 0);
-    }
-
-    #[test]
     fn no_intrusion_without_an_agent() {
         let mut trace = InputTrace::default();
         assert!(!trace.record(1, InputOrigin::User, key("key.keyboard.w"), false));
         // The game's own input is not a person either.
         trace.record(2, InputOrigin::Agent, key("key"), false);
         assert!(!trace.record(3, InputOrigin::Game, key("key.keyboard.w"), false));
-    }
-
-    #[test]
-    fn input_log_filters_since_origin_and_limit() {
-        let mut trace = InputTrace::default();
-        for (i, origin) in [
-            InputOrigin::Agent,
-            InputOrigin::User,
-            InputOrigin::Game,
-            InputOrigin::User,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            trace.record(i as u64, origin, key("key.keyboard.w"), false);
-        }
-        let all = trace.command(&["input-log"]).unwrap().unwrap();
-        assert_eq!(all["events"].as_array().unwrap().len(), 4);
-        assert_eq!(all["last"], 4);
-
-        let users = trace
-            .command(&["input-log", "--origin", "user"])
-            .unwrap()
-            .unwrap();
-        assert_eq!(users["events"].as_array().unwrap().len(), 2);
-        assert!(
-            users["events"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|e| e["origin"] == "user")
-        );
-
-        let newest = trace
-            .command(&["input-log", "--since", "2", "--limit", "1"])
-            .unwrap()
-            .unwrap();
-        let events = newest["events"].as_array().unwrap();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0]["seq"], 4);
-    }
-
-    #[test]
-    fn the_recording_writer_gets_one_json_line_per_event() {
-        let (tx, rx) = std::sync::mpsc::channel();
-        let mut trace = InputTrace::default();
-        trace.start_file(tx);
-        trace.record(7, InputOrigin::User, key("key.keyboard.w"), false);
-        trace.record(8, InputOrigin::Agent, key("key.keyboard.s"), false);
-        assert_eq!(trace.stop_file(), 2);
-        let lines: Vec<String> = rx.try_iter().collect();
-        assert_eq!(lines.len(), 2);
-        let first: Value = serde_json::from_str(&lines[0]).unwrap();
-        assert_eq!(first["tick"], 7);
-        assert_eq!(first["origin"], "user");
-        assert_eq!(first["kind"], "key");
-        assert_eq!(first["key"], "key.keyboard.w");
-    }
-
-    #[test]
-    fn private_arguments_are_dropped() {
-        assert_eq!(redact_command("chat /login hunter2"), "chat <redacted>");
-        assert_eq!(
-            redact_command("connect friend:ABCD-1234"),
-            "connect <redacted>"
-        );
-        assert_eq!(
-            redact_command("key key.keyboard.w down"),
-            "key key.keyboard.w down"
-        );
-    }
-
-    #[test]
-    fn polls_are_read_only() {
-        for line in [
-            "state",
-            "wait-for event death",
-            "record-status",
-            "input-log --origin user",
-            "ui",
-        ] {
-            assert!(is_read_only(line), "{line}");
-        }
-        for line in ["key w down", "record-start x", "mouse left click"] {
-            assert!(!is_read_only(line), "{line}");
-        }
-    }
-
-    #[test]
-    fn session_commands_are_not_input() {
-        for line in [
-            "record-start x",
-            "record-stop --export",
-            "record-replay x",
-            "repro-export x",
-            "quit",
-        ] {
-            assert!(is_session_command(line), "{line}");
-        }
-        assert!(!is_session_command("key w down"));
     }
 
     #[test]
@@ -664,12 +326,4 @@ mod tests {
         assert!(trace.record(2, InputOrigin::User, key("key.keyboard.a"), true));
     }
 
-    #[test]
-    fn a_suppressed_replay_records_nothing() {
-        let mut trace = InputTrace::default();
-        trace.set_suppress(true);
-        assert!(!trace.record(1, InputOrigin::User, key("key.keyboard.w"), false));
-        assert_eq!(trace.seq, 0);
-        assert!(trace.summary()["last_origin"].is_null());
-    }
 }
