@@ -79,10 +79,10 @@ pub enum WasmError {
     TooLarge,
     /// Not a WebAssembly file (no `\0asm` header).
     NotWasm,
-    /// Not a valid shared group member with the guest entry points.
-    InvalidMember,
     /// The bytes aren't the ones `[wasm] sha512` names.
     Hash,
+    /// This build runs no wasm mods.
+    Unsupported,
 }
 
 impl std::fmt::Display for WasmError {
@@ -92,8 +92,8 @@ impl std::fmt::Display for WasmError {
             Self::Undeclared => "mod.wasm needs a [wasm] section",
             Self::TooLarge => "mod.wasm exceeds 64 MiB",
             Self::NotWasm => "mod.wasm is not a WebAssembly file",
-            Self::InvalidMember => "mod.wasm is not a valid shared group member",
             Self::Hash => "mod.wasm doesn't match its [wasm] sha512",
+            Self::Unsupported => "this build runs no wasm mods",
         })
     }
 }
@@ -122,8 +122,8 @@ impl Wasm {
         self.built_with.as_deref()
     }
 
-    /// Checks `bytes` are this section's `mod.wasm`. The bytes are hashed on every call; a module
-    /// is validated once per process, since the game reads a package several times as it starts.
+    /// Checks `bytes` are this section's `mod.wasm`, then refuses it: this build runs no wasm
+    /// mods, so a package carrying one is never installed or loaded.
     pub fn check(&self, bytes: &[u8]) -> Result<(), WasmError> {
         if bytes.len() as u64 > MAX_WASM {
             return Err(WasmError::TooLarge);
@@ -134,114 +134,8 @@ impl Wasm {
         if sha512_of(bytes) != self.sha512 {
             return Err(WasmError::Hash);
         }
-        let validated = || VALIDATED.lock().unwrap_or_else(|e| e.into_inner());
-        if validated().contains(&self.sha512) {
-            return Ok(());
-        }
-        valid_member(bytes)?;
-        validated().insert(self.sha512.clone());
-        Ok(())
+        Err(WasmError::Unsupported)
     }
-}
-
-/// The SHA-512s of the modules [`Wasm::check`] has found valid members in this process: whether
-/// a module is one depends on its bytes alone.
-static VALIDATED: std::sync::Mutex<std::collections::BTreeSet<String>> =
-    std::sync::Mutex::new(std::collections::BTreeSet::new());
-
-/// Whether `bytes` are a valid shared group member with the guest entry points.
-fn valid_member(bytes: &[u8]) -> Result<(), WasmError> {
-    wasmparser::Validator::new()
-        .validate_all(bytes)
-        .map_err(|_| WasmError::InvalidMember)?;
-    let mut shared = false;
-    let mut exports = [false; 3];
-    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
-        match payload.map_err(|_| WasmError::InvalidMember)? {
-            wasmparser::Payload::Version {
-                encoding: wasmparser::Encoding::Component,
-                ..
-            } => return Err(WasmError::InvalidMember),
-            wasmparser::Payload::CustomSection(section) if section.name() == "dylink.0" => {
-                if shared {
-                    return Err(WasmError::InvalidMember);
-                }
-                let wasmparser::KnownCustom::Dylink0(subsections) = section.as_known() else {
-                    return Err(WasmError::InvalidMember);
-                };
-                let mut memory_info = false;
-                for subsection in subsections {
-                    if let wasmparser::Dylink0Subsection::MemInfo(_) =
-                        subsection.map_err(|_| WasmError::InvalidMember)?
-                    {
-                        if memory_info {
-                            return Err(WasmError::InvalidMember);
-                        }
-                        memory_info = true;
-                    }
-                }
-                if !memory_info {
-                    return Err(WasmError::InvalidMember);
-                }
-                shared = true;
-            }
-            wasmparser::Payload::ImportSection(section) => {
-                for import in section.into_imports() {
-                    let import = import.map_err(|_| WasmError::InvalidMember)?;
-                    // Each API call's own import, which the game links by name:
-                    // `Owner::method#signature`.
-                    let call = import.module == "horizon"
-                        && import.name.contains("::")
-                        && import.name.contains('#')
-                        && matches!(import.ty, wasmparser::TypeRef::Func(_));
-                    let allowed = matches!(
-                        (import.module, import.name, import.ty),
-                        ("env", "memory", wasmparser::TypeRef::Memory(_))
-                            | (
-                                "env",
-                                "__indirect_function_table",
-                                wasmparser::TypeRef::Table(_)
-                            )
-                            | (
-                                "env",
-                                "__stack_pointer" | "__memory_base" | "__table_base",
-                                wasmparser::TypeRef::Global(_),
-                            )
-                            | ("env", _, wasmparser::TypeRef::Func(_))
-                            | ("GOT.mem" | "GOT.func", _, wasmparser::TypeRef::Global(_))
-                            | (
-                                "horizon",
-                                "host" | "host_reply",
-                                wasmparser::TypeRef::Func(_)
-                            )
-                    );
-                    if !allowed && !call {
-                        return Err(WasmError::InvalidMember);
-                    }
-                }
-            }
-            wasmparser::Payload::ExportSection(section) => {
-                for export in section {
-                    let export = export.map_err(|_| WasmError::InvalidMember)?;
-                    if export.kind == wasmparser::ExternalKind::Func {
-                        for (index, name) in ["horizon_layout", "horizon_in", "horizon_hook"]
-                            .iter()
-                            .enumerate()
-                        {
-                            if export.name == *name {
-                                exports[index] = true;
-                            }
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    if !shared || !exports.into_iter().all(|found| found) {
-        return Err(WasmError::InvalidMember);
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -262,49 +156,11 @@ mod tests {
     fn a_module_is_checked_by_header_size_and_hash() {
         let module = b"\0asm\x01\0\0\0".to_vec();
         let wasm = section(&module);
-        assert_eq!(wasm.check(&module), Err(WasmError::InvalidMember));
+        assert_eq!(wasm.check(&module), Err(WasmError::Unsupported));
         let mut changed = module.clone();
         changed[7] = 1;
         assert_eq!(wasm.check(&changed), Err(WasmError::Hash));
         assert_eq!(section(b"MZ").check(b"MZ"), Err(WasmError::NotWasm));
-    }
-
-    #[test]
-    fn member_requires_shared_layout_guest_exports_and_allowed_imports() {
-        let module = |imports: &str, exports: &str, dylink: &str| {
-            wat::parse_str(format!("(module {dylink} {imports} {exports})")).unwrap()
-        };
-        let dylink = r#"(@custom "dylink.0" "\01\04\00\00\00\00")"#;
-        let exports = r#"(func (export "horizon_layout")) (func (export "horizon_in")) (func (export "horizon_hook"))"#;
-        let imports = r#"(import "horizon" "host" (func)) (import "env" "memory" (memory 1))"#;
-        let good = module(imports, exports, dylink);
-        assert_eq!(section(&good).check(&good), Ok(()));
-        let call = module(
-            r#"(import "horizon" "Host::level#00000000000000ff" (func)) (import "env" "memory" (memory 1))"#,
-            exports,
-            dylink,
-        );
-        assert_eq!(section(&call).check(&call), Ok(()));
-        for bad in [
-            module(imports, exports, ""),
-            module(imports, exports, r#"(@custom "dylink.0" "\01\01\00")"#),
-            module(imports, exports, r#"(@custom "dylink.0" "")"#),
-            module(
-                r#"(import "GOT.other" "thing" (global i32))"#,
-                exports,
-                dylink,
-            ),
-            module(r#"(import "env" "unknown" (global i32))"#, exports, dylink),
-            module(imports, "", dylink),
-            module(
-                r#"(import "wasi_snapshot_preview1" "fd_write" (func))"#,
-                exports,
-                dylink,
-            ),
-            module(r#"(import "horizon" "other" (func))"#, exports, dylink),
-        ] {
-            assert_eq!(section(&bad).check(&bad), Err(WasmError::InvalidMember));
-        }
     }
 
     #[test]

@@ -232,8 +232,6 @@ const AUTO_UPLOADS_AT_ONCE: usize = 8;
 enum Screen {
     Playing,
     GameModeSwitcher,
-    /// Horizon's emote wheel (`game/cosmetics/emote_wheel.rs`): over the world, not pausing.
-    EmoteWheel,
     Paused,
     Options,
     Chat,
@@ -282,7 +280,6 @@ impl Screen {
         match self {
             Screen::Playing => "playing",
             Screen::GameModeSwitcher => "game_mode_switcher",
-            Screen::EmoteWheel => "emote_wheel",
             Screen::Paused => "paused",
             Screen::Options => "options",
             Screen::Chat => "chat",
@@ -1543,9 +1540,6 @@ struct Game<'a> {
     /// Roll already resolved by `render_sequence_frame` for the next `render_frame` call so
     /// sequence validation and rendering share one `camera_roll` dispatch.
     sequence_frame_roll: Option<f32>,
-    /// Set by `render_sequence_frame` for its `sequence_scene` call: the frame about to be
-    /// drawn, and whether mods are asked for its roll.
-    sequence_frame_asks: Option<bool>,
     /// `LocalPlayer.postEffects`: the chains the server has the screen run
     /// (`ClientboundPostEffectsPacket`), in order.
     post_effects: Vec<String>,
@@ -1597,8 +1591,6 @@ struct Game<'a> {
     /// and mannequins) resolve through the services in the background.
     skin_profiles: RefCell<horizon_client::skins::Resolver>,
     skin_slots: horizon_client::skins::SkinSlots,
-    /// Cosmetics on players (game/cosmetics.rs), off by default.
-    cosmetics: cosmetics::Cosmetics,
     /// 3D skin layers: each player's outer layer as one slab per painted
     /// texel, built once per (skin, slim) (`mobs::skin_layers`).
     skin_3d: RefCell<skin_models::SkinModels>,
@@ -1676,26 +1668,8 @@ struct Game<'a> {
     /// `CreativeModeInventoryScreen.ignoreTextInput`: the chat key opened the
     /// search tab, so the letter it carries is not typed into the box.
     creative_ignore_text: bool,
-    control: Option<horizon_client::control::Server>,
-    /// The Agent Control setting the socket was last opened or closed for (`agent_settings`).
-    agent_control_on: bool,
-    /// When an agent's last command came.
-    agent_last: Option<Instant>,
-    frame_stats: horizon_client::control::FrameStats,
-    /// This thread's and all threads' allocation counts at the last rendered frame.
-    alloc_mark: Option<(
-        horizon_threads::alloc_count::Counts,
-        horizon_threads::alloc_count::Counts,
-    )>,
     /// This play session's frame and tick times, for opt-in performance statistics.
     perf: horizon_client::telemetry::Session,
-    /// Control replies waiting for a rendered frame or a benchmark deadline.
-    pending_screenshot: Option<pending_screenshot::Pending>,
-    /// `screenshot-sequence` while it runs.
-    screenshot_sequence: Option<screenshot_sequence::Sequence>,
-    /// `render-capture DIR`: replied once the renderer wrote the scene.
-    pending_render_capture: Option<std::sync::mpsc::Sender<String>>,
-    pending_bench: Option<(Instant, std::sync::mpsc::Sender<String>, bool)>,
     /// Recent frame times for the performance overlay.
     frame_graph: horizon_client::perf_overlay::FrameGraph,
     /// Horizon's extras (minimap, auto-reconnect; mods' counters): `game/interface/extras.rs`.
@@ -1736,18 +1710,8 @@ struct Game<'a> {
     view_frustum: Option<horizon_client::gfx::JoinedFrusta>,
     occlusion: entity_culling::EntityOcclusion,
     async_particle_culler: RefCell<particle_culling::ParticleAsyncState>,
-    /// A scripted flight from the control socket (`fly`).
-    flight: Option<control::Flight>,
-    /// The running agent action from the control socket (game/runtime/agent/mod.rs).
-    agent: agent::Agent,
-    /// Widget commands waiting for the frame after a click (game/runtime/ui_control.rs).
-    ui_wait: ui_control::UiWait,
-    /// What happened, for `events` and `wait-for` (game/runtime/events.rs).
-    events: events::Events,
     /// Who caused each input event: a person, an agent or the game (game/runtime/input_trace.rs).
     input_trace: input_trace::InputTrace,
-    /// A repro recording, export or replay (game/runtime/repro.rs).
-    repro: repro::Repro,
     /// The health history and client captures (game/profile_capture.rs).
     profile: profile_capture::Profile,
     /// `HORIZON_TICK_SCRIPT`'s scenario (game/world/tick_script.rs).
@@ -1783,9 +1747,6 @@ struct Game<'a> {
     level_shapes: horizon_client::chunk::LevelShapes,
     /// This game is that server thread's (game/world/integrated.rs).
     serving: Option<integrated::Serving>,
-    /// The open world is shared behind an invite code (game/network/friends.rs).
-    #[cfg(feature = "friends")]
-    friends: Option<friends::Sharing>,
     /// The Social Interactions screen and the players whose chat is hidden (game/network/social.rs).
     social: social::Social,
     world_options: Option<lan_screen::WorldOptions>,
@@ -4403,9 +4364,6 @@ impl Game<'_> {
     }
     fn tick(&mut self) -> Result<()> {
         self.expire_client_cracks();
-        if self.agent.hold_server {
-            return Ok(());
-        }
         self.abort_open_transactions();
         self.update_interaction_ranges();
         // A logical server has no window to lead and never follows another server.
@@ -5104,7 +5062,6 @@ impl Game<'_> {
                 );
             }
             Screen::GameModeSwitcher => self.draw_gamemode_switcher(&mut batch),
-            Screen::EmoteWheel => self.draw_emote_wheel(&mut batch),
             Screen::Dead => self.draw_death_screen(&mut batch),
             Screen::Stats => self.draw_stats(&mut batch),
             Screen::Advancements => self.draw_advancements(&mut batch),
@@ -7839,7 +7796,6 @@ impl Game<'_> {
         if self.world.carrier_fences.is_broken()
             || self.remote.is_some()
             || self.world_root.as_os_str().is_empty()
-            || self.agent.hold_server
             || self.clock.sprinting()
             || self
                 .server_lists
@@ -7878,9 +7834,6 @@ impl Game<'_> {
         self.world.modified = modified;
     }
     fn render(&mut self) -> Result<bool> {
-        if self.screenshot_sequence.is_some() {
-            return self.render_sequence_frame();
-        }
         self.render_frame()
     }
     /// Render the frame, then its two moments after that: `render_frame_post` whatever
@@ -8516,7 +8469,7 @@ impl Game<'_> {
         pr.lap("pr_entity_setup");
         // The pack is chosen before entity geometry, so a pack that starts this frame
         // keeps block-entity models in the CPU stream instead of dropping them.
-        let mut pack_inputs = if title {
+        let pack_inputs = if title {
             Default::default()
         } else {
             self.shader_pack_inputs(camera, alpha as f32, &sky)
@@ -8621,10 +8574,6 @@ impl Game<'_> {
             self.gather_dynamic_lights(camera, alpha);
         }
         pr.lap("pr_lights");
-        pack_inputs.frame_timing = self
-            .screenshot_sequence
-            .as_ref()
-            .map(screenshot_sequence::Sequence::timing);
         pr.lap("pr_shader_inputs");
         // Fog hooks may clear particles too. They must run before the final clear
         // boundary, not while constructing Frame after geometry has been extracted.
@@ -9144,7 +9093,7 @@ impl Game<'_> {
         } = &mut event
             && key_event.state == ElementState::Pressed
         {
-            let title_text = control::title_owns_text(&self.screen, self.title.is_some());
+            let title_text = text_input::title_owns_text(&self.screen, self.title.is_some());
             if self.screen_hooks_open()
                 && self.screen != Screen::Options
                 && (!title_text || self.title.as_mut().is_some_and(|t| t.has_caret_field()))
@@ -9209,10 +9158,6 @@ impl Game<'_> {
                 && !self.pad_synthetic_input()
             {
                 self.track_drag_button(*button, *state == ElementState::Pressed);
-            }
-            // The emote key let go over the wheel, a click on it.
-            if self.screen == Screen::EmoteWheel && self.emote_wheel_event(&event) {
-                return Ok(());
             }
             if let WindowEvent::KeyboardInput { event, .. } = &event
                 && event.state == ElementState::Released
@@ -9280,7 +9225,6 @@ impl Game<'_> {
                     {
                         return Ok(());
                     }
-                    self.agent_cancel("the game window was closed; the game saves and exits");
                     self.begin_closing_save(true)?;
                 }
                 // Input method composition: the committed text types like a key's text.
@@ -9307,7 +9251,7 @@ impl Game<'_> {
                         // system keeps the grab: the window asks for it back
                         // when the focus returns (`regrab_on_refocus`).
                         let held = self.captured;
-                        if self.control.is_none() {
+                        {
                             self.keys.clear();
                             // Latched sneak/sprint live in `toggles`, not in the
                             // physical keys: put them back so a short alt-tab
@@ -10179,11 +10123,9 @@ impl Game<'_> {
                         horizon_client::spans::time("update_world", || self.update_world());
                         horizon_client::spans::time("spawn_player", || self.spawn_player())?;
                     }
-                    let updated = Instant::now();
                     self.track_toggle_screens();
                     self.heal_hold_latches();
                     horizon_hooks::engine::published(self.is_published());
-                    self.report_activity();
                     let target = self.tick_target_millis();
                     let steps = self.clock.advance(elapsed, target);
                     // Once per frame, whatever `steps` is: `tick` never runs on the title, and a frame with
@@ -10194,9 +10136,7 @@ impl Game<'_> {
                     self.extras_retry()?;
                     self.apply_mouse_look();
                     self.input_look(elapsed.as_secs_f32());
-                    self.advance_flight();
                     self.tick_world_icon();
-                    let ticked = Instant::now();
                     self.flush_immediate_meshes();
                     let rendered = self.render_and_flip(elapsed)?;
                     self.native_frame_end()?;
@@ -10233,18 +10173,7 @@ impl Game<'_> {
                                 r,
                                 (ms(cpu), ms(elapsed)),
                             );
-                            self.frame_stats.record_cpu(ms(cpu));
-                            let render = r.last_encode;
-                            self.frame_stats.record_phases([
-                                ms(updated - now),
-                                ms(ticked - updated),
-                                ms(ticked.elapsed().saturating_sub(r.last_wait + render)),
-                                ms(render),
-                            ]);
-                            self.frame_stats
-                                .record_block_entities(r.static_block_entity_frame_stats());
                         }
-                        self.frame_stats.record_gpu(&r.gpu_times);
                         r.gpu_times.clear();
                     }
                     self.limit_frame();
@@ -10268,7 +10197,7 @@ impl Game<'_> {
                     }
                     self.clock.end_frame(self.pause);
                     self.poll_screenshot_writes();
-                    let mut consumed = !self.ui.screenshot_messages.is_empty();
+                    let consumed = !self.ui.screenshot_messages.is_empty();
                     let finished = self
                         .renderer
                         .as_mut()
@@ -10281,27 +10210,6 @@ impl Game<'_> {
                                 Some(result)
                             }
                         });
-                    if let Some(result) = &finished
-                        && let Some(pending) = self.pending_screenshot.take()
-                    {
-                        let _ = pending.reply.send(
-                            match result {
-                                Ok([w, h]) => {
-                                    serde_json::json!({ "ok": true, "width": w, "height": h })
-                                }
-                                Err(e) => serde_json::json!({ "error": e }),
-                            }
-                            .to_string(),
-                        );
-                        consumed = true;
-                    }
-                    if let Some(result) =
-                        self.renderer.as_mut().and_then(|r| r.capture_result.take())
-                        && let Some(reply) = self.pending_render_capture.take()
-                    {
-                        let value = result.unwrap_or_else(|e| serde_json::json!({ "error": e }));
-                        let _ = reply.send(value.to_string());
-                    }
                     // A result nobody asked for was the world icon's
                     // (`tick_world_icon`): a failure tries again a second
                     // later, as `tryTakeScreenshotIfNeeded` does.
@@ -10309,7 +10217,6 @@ impl Game<'_> {
                         log::warn!("Horizon: couldn't save the world icon: {error}");
                     }
                     if rendered {
-                        self.frame_stats.record(elapsed.as_secs_f32() * 1000.0);
                         if let Some((cpu, gpu)) = perf_times {
                             self.record_perf_frame(
                                 elapsed.as_secs_f32() * 1000.0,
@@ -10317,9 +10224,6 @@ impl Game<'_> {
                                 gpu,
                                 &frame_spans,
                             );
-                        }
-                        if horizon_threads::alloc_count::ON {
-                            self.record_frame_allocs();
                         }
                         self.debug_charts.frame_times.log(elapsed.as_nanos() as i64);
                         if self.frames == 0 {
@@ -10336,8 +10240,6 @@ impl Game<'_> {
                             && self.screen == Screen::Playing
                             && self.player.is_some()
                         {
-                            self.perf
-                                .frame(elapsed.as_secs_f32() * 1000.0, &frame_spans);
                             if startup::filling() {
                                 let mut fill: Vec<(&'static str, usize)> =
                                     self.streaming.stages().to_vec();
@@ -10823,7 +10725,6 @@ impl<'a> Game<'a> {
             posed_rotation: None,
             posed_roll: 0.0,
             sequence_frame_roll: None,
-            sequence_frame_asks: None,
             post_effects: Vec::new(),
             polytone_post_ticks: 0.0,
             spectated_post_effect: None,
@@ -10862,7 +10763,6 @@ impl<'a> Game<'a> {
             }),
             skin_profiles: RefCell::new(horizon_client::skins::Resolver::new()),
             skin_slots: horizon_client::skins::SkinSlots::new(horizon_client::hud::SKIN_SLOTS),
-            cosmetics: Default::default(),
             skin_3d: Default::default(),
             trim_slots: Default::default(),
             cart_models: prepared.cart_models,
@@ -10906,24 +10806,10 @@ impl<'a> Game<'a> {
             loop_states: Default::default(),
             creative_screen: prepared.creative_screen,
             creative_ignore_text: false,
-            control: None,
-            agent_control_on: false,
-            agent_last: None,
-            frame_stats: Default::default(),
-            alloc_mark: None,
             perf: Default::default(),
-            pending_screenshot: None,
-            screenshot_sequence: None,
-            pending_render_capture: None,
-            pending_bench: None,
-            flight: None,
-            ui_wait: Default::default(),
-            events: Default::default(),
             input_trace: Default::default(),
-            repro: Default::default(),
             profile: profile_capture::Profile::new(slow_frame_ms),
             tick_script: tick_script::TickScript::from_env(),
-            agent: agent::Agent::default(),
             view_frustum: None,
             occlusion: Default::default(),
             async_particle_culler: RefCell::new(Default::default()),
@@ -10972,8 +10858,6 @@ impl<'a> Game<'a> {
             test_defs_snapshot: false,
             test_highlights: HashMap::new(),
             game_tests: game_tests::GameTests::default(),
-            #[cfg(feature = "friends")]
-            friends: None,
             social: Default::default(),
             debug_keys: Default::default(),
             debug_charts: Default::default(),
@@ -11181,14 +11065,6 @@ pub(crate) fn run_with(
         options.spikes = Some(dedicated::SLOW_TICK_MS);
     }
     tick_profile::want_spans(tick_profile::SPANS_SPIKES, options.spikes.is_some());
-    // A player who allows performance statistics also says what their slow frames spent their
-    // time in: this thread, which draws the frames, times its steps (wall time only).
-    if options.execution_role.is_client()
-        && horizon_telemetry::Consent::load(&horizon_client::logging::game_home())
-            .allows(horizon_telemetry::Kind::Perf)
-    {
-        horizon_client::spans::record_here(true);
-    }
     let vanilla_root = options.resources.clone();
     // Saves from before 1.13 upgrade with vanilla's tables, prepared from the player's jar.
     horizon_world::datafix::set_resources(
@@ -11311,8 +11187,6 @@ pub(crate) fn run_with(
         let game_dir = horizon_client::logging::player_dir();
         horizon_hooks::engine::started(&horizon_hooks::Started::new(&version, &game_dir));
     }
-    // A game window's hooks (Discord's presence): never for a server.
-    activity::client_started(&options);
     // Snapshots of derived tables live in the game folder, never beside the
     // shared resources.
     Behaviours::set_cache_dir(std::env::current_dir()?.join(".horizon-cache"));

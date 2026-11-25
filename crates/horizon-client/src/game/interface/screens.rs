@@ -67,7 +67,7 @@ impl Screen {
             // No screen over the world, and Horizon's own screens that
             // draw over it (the emote wheel, a native mod's screen and
             // Studio) leave it running as they always have.
-            | Self::Playing | Self::EmoteWheel | Self::Mod | Self::Studio
+            | Self::Playing | Self::Mod | Self::Studio
             // WinScreen.isPauseScreen is `!poem`: Game::win_screen_pauses.
             | Self::Win => false,
             // Every other screen, and the game-master block editors
@@ -121,7 +121,7 @@ impl Screen {
             | Self::Mod
             // The HUD editor shows the HUD it moves.
             | Self::HudEditor
-            | Self::Studio | Self::EmoteWheel => false,
+            | Self::Studio => false,
             // WinScreen.extractBackground: the poem fills the screen with the End portal, the
             // credits alone blur. Game::menu_blur knows which one rolls.
             Self::Win => false,
@@ -1139,7 +1139,6 @@ mod tests {
             Screen::GameModeSwitcher,
             Screen::Social,
             Screen::Playing,
-            Screen::EmoteWheel,
             Screen::Mod,
             Screen::Studio,
             Screen::Win,

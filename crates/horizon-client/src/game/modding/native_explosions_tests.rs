@@ -14,7 +14,6 @@ use mod_api::{
     EntityRef, ExplodeError, ExplosionCalculator, ExplosionDetonateEvent, ExplosionInteraction,
     ExplosionSettings, ExplosionStartEvent, Flow, Hooks, LevelRandomHost, LivingDamagePostEvent,
     LivingDeathEvent, ModEntry, ServerHost,
-    wire::{Reader, Writer},
 };
 use std::sync::{Arc, Mutex};
 
@@ -22,9 +21,8 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone, Copy, Debug)]
 enum Via {
     Native,
-    Wasm,
 }
-const BOTH: [Via; 2] = [Via::Native, Via::Wasm];
+const BOTH: [Via; 1] = [Via::Native];
 
 /// One `explode` call.
 struct Blast {
@@ -68,89 +66,7 @@ fn explode(game: &mut Game<'_>, via: Via, blast: Blast, expected: Answer) {
             ),
             expected
         ),
-        Via::Wasm => wasm_explode(game, level, blast, expected),
     }
-}
-
-/// A guest whose server tick calls `level_explode` through its import and
-/// answers the tick only when the host's answer is `expected` (it traps otherwise).
-fn wasm_explode(game: &mut Game<'_>, level: mod_api::LevelRef, blast: Blast, expected: Answer) {
-    let mut input = Writer::new();
-    input.put(&level);
-    input.put(&blast.source);
-    input.put(&blast.center);
-    input.put(&blast.radius);
-    input.put(&blast.fire);
-    input.put(&blast.interaction);
-    input.put(&blast.settings);
-    let mut answer = Writer::new();
-    answer.put(&expected);
-    let mut reply = Writer::new();
-    reply.put(&mod_api::ServerTickPhase::ServerTickEnd {
-        world_running: true,
-    });
-    let escape = |bytes: &[u8]| {
-        bytes
-            .iter()
-            .map(|b| format!("\\{b:02x}"))
-            .collect::<String>()
-    };
-    let check = answer
-        .bytes()
-        .iter()
-        .enumerate()
-        .map(|(i, byte)| {
-            format!(
-                "i32.const {} i32.load8_u i32.const {byte} i32.ne if unreachable end ",
-                32768 + i
-            )
-        })
-        .collect::<String>();
-    let id = horizon_mod_wasm::fixture::import_id("BackendMut", "level_explode").unwrap();
-    let bytes = wat::parse_str(horizon_mod_wasm::fixture::by_name(&format!(
-        r#"(module
-          (@custom "dylink.0" "\01\04\00\00\00\00")
-          (import "env" "memory" (memory 1))
-          (import "env" "__indirect_function_table" (table 1 funcref))
-          (import "horizon" "host" (func $host (param i32 i32 i32 i32 i32) (result i32)))
-          (import "horizon" "host_reply" (func (param i32)))
-          (func (export "horizon_layout") (result i64) i64.const {layout})
-          (data (i32.const 4096) "{input}")
-          (data (i32.const 16384) "{reply}")
-          (func (export "horizon_in") (param i32) (result i32) i32.const 512)
-          (func (export "horizon_hook") (param i32) (result i64)
-            i32.const {id} i32.const 4096 i32.const {input_len} i32.const 32768 i32.const 4096 call $host drop
-            {check}
-            i64.const {reply_at}))"#,
-        layout = *mod_api::wire::LAYOUT,
-        input = escape(input.bytes()),
-        reply = escape(reply.bytes()),
-        input_len = input.bytes().len(),
-        reply_at = (16384u64 << 32) | reply.bytes().len() as u64,
-    ), &[("BackendMut", "level_explode")]))
-    .unwrap();
-    let module = horizon_mod_wasm::fixture::module(&bytes).unwrap();
-    let mut context = Writer::new();
-    context.put(&mod_api::Authority::DedicatedServer);
-    context.put(&level.epoch());
-    context.put(&mod_api::TickId::new(1));
-    let context: mod_api::LifecycleContext = Reader::new(context.bytes()).take().unwrap();
-    let mut tick = mod_api::ServerTickEvent {
-        context: &context,
-        phase: mod_api::ServerTickPhase::ServerTickStart {
-            world_running: true,
-        },
-    };
-    Hooks::server_tick(&module, game, &mut tick);
-    assert!(
-        matches!(
-            tick.phase,
-            mod_api::ServerTickPhase::ServerTickEnd {
-                world_running: true
-            }
-        ),
-        "the guest saw the answer {expected:?}"
-    );
 }
 
 /// A server's overworld chunk (0, 0) with a stone floor at y 79.

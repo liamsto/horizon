@@ -912,19 +912,6 @@ impl Game<'_> {
             .and_then(|slot| board.display_objective(&slot));
         team_slot.or_else(|| board.display_objective(sb::SLOT_SIDEBAR))
     }
-    /// The sidebar the HUD shows: its objective and its lines, for `status`.
-    pub(super) fn sidebar_status(&self) -> serde_json::Value {
-        let board = &self.score.board;
-        let Some(objective) = self.sidebar_objective() else {
-            return serde_json::Value::Null;
-        };
-        let scores: serde_json::Map<String, serde_json::Value> = board
-            .scores
-            .iter()
-            .filter_map(|(holder, s)| Some((holder.clone(), s.get(&objective.name)?.value.into())))
-            .collect();
-        serde_json::json!({ "objective": objective.name, "title": objective.display_text().plain(), "scores": scores })
-    }
 
     /// `Hud.extractScoreboardSidebar` / `displayScoreboardSidebar`.
     pub(super) fn draw_scoreboard(&self, batch: &mut HudBatch) {

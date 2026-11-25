@@ -25,12 +25,11 @@ test = false
 
 [features]
 # horizon-client/client-lib-default: one build of the game whether or not horizon-client-lib is also named.
-default = ["audio", "controllers", "horizon-extras", "horizon-client/client-lib-default"]
+default = ["audio", "controllers", "horizon-client/client-lib-default"]
 audio = ["horizon-client/audio"]
 controllers = ["horizon-client/controllers"]
 horizon-extras = ["horizon-client/horizon-extras"]
 testing = ["horizon-client/testing"]
-friends = ["horizon-client/friends"]
 rng-trace = ["horizon-client/rng-trace"]
 system-allocator = ["horizon-client/system-allocator"]
 alloc-census = ["horizon-client/alloc-census"]

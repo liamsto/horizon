@@ -9,16 +9,10 @@ use horizon_client::{
     options_ui::{Event, Page},
     window::{FrameContext, InactivityFpsLimit, framerate_limit},
 };
-use serde_json::{Value, json};
 use winit::{event::MouseButton, keyboard::KeyCode, window::Fullscreen};
 
 /// `CommonLinks.ACCESSIBILITY_HELP`, the Accessibility page's footer link.
 pub(super) const ACCESSIBILITY_HELP_LINK: &str = "https://aka.ms/MinecraftJavaAccessibility";
-
-pub(super) const CONTROL_HELP: &[&str] = &[
-    "options-get [KEY...]           options.txt values by key, with their type, range or choices",
-    "options-set KEY VALUE          set an option (enums by name, keys as key.keyboard.w, lists as JSON), apply and save it",
-];
 
 impl Game<'_> {
     pub(super) fn save_title_options(&mut self) {
@@ -36,61 +30,6 @@ impl Game<'_> {
                 horizon_client::options_file::V::Bool(title.skip_multiplayer_warning),
             );
             self.settings.save(&Self::options_path());
-        }
-    }
-    /// `options-get` and `options-set`; None for other commands.
-    pub(super) fn options_control(&mut self, words: &[&str], line: &str) -> Result<Option<Value>> {
-        match words[0] {
-            "options-get" => {
-                let file = self.settings.to_file();
-                let wanted: Vec<&str> = if words.len() > 1 {
-                    words[1..].to_vec()
-                } else {
-                    horizon_client::options_file::keys()
-                };
-                let mut options = serde_json::Map::new();
-                for key in wanted {
-                    let described = file.describe(key).ok_or_else(|| {
-                        format!("unknown option {key}; options-get lists them all")
-                    })?;
-                    options.insert(key.to_owned(), described);
-                }
-                Ok(Some(json!({ "options": options })))
-            }
-            "options-set" => {
-                let key = words.get(1).ok_or("options-set KEY VALUE")?;
-                // The value runs to the end of the line (lists, server names).
-                let value = line
-                    .trim_start()
-                    .strip_prefix("options-set")
-                    .and_then(|rest| rest.trim_start().strip_prefix(key))
-                    .map(str::trim)
-                    .filter(|v| !v.is_empty())
-                    .ok_or("options-set KEY VALUE: missing the value")?;
-                let narrator = self.settings.narrator();
-                let reduced = self.settings.reduced_debug_info;
-                self.settings = self.settings.with_option(key, value)?;
-                if self.settings.reduced_debug_info != reduced {
-                    self.debug_entries.invalidate();
-                }
-                // As the options screen applies a change (OptionInstance.set
-                // runs the narrator's onValueUpdate for a new value only).
-                let mut events = vec![Event::Changed];
-                if self.settings.narrator() != narrator {
-                    events.push(Event::Narrator);
-                }
-                self.handle_option_events(events)?;
-                match *key {
-                    "lang" => self.load_language(&self.settings.language.clone()),
-                    "resourcePacks" | "incompatibleResourcePacks" => self.reload_packs(),
-                    _ => {}
-                }
-                // Labels change (a language, a value): `ui` reads the redrawn screen.
-                self.ui_wait.clicked();
-                let now = self.settings.to_file().describe(key);
-                Ok(Some(json!({ "ok": true, "key": key, "option": now })))
-            }
-            _ => Ok(None),
         }
     }
     /// This player's `options.txt`: in the game folder, or in `--player-dir` when several
@@ -380,8 +319,6 @@ impl Game<'_> {
                     self.switch_mods();
                     self.sync_native_switches();
                     self.sync_pregen_option();
-                    self.sync_agent_control();
-                    self.ui.options.agent_status = self.agent_status_lines();
                 }
                 Event::SliderDrag => {
                     self.apply_settings();
@@ -392,14 +329,7 @@ impl Game<'_> {
                     self.audio.preview(source, volume);
                 }
                 Event::Volume(..) => {}
-                Event::CopyAgentDetails => {
-                    use horizon_client::clipboard::Clipboard;
-                    let text = self.agent_details();
-                    self.clipboard.set(&text);
-                }
-                // The AI Agent page's repro buttons (game/runtime/repro.rs).
-                Event::ToggleRecording => self.toggle_recording_key(),
-                Event::ExportRepro => self.export_repro_key(),
+                Event::CopyAgentDetails | Event::ToggleRecording | Event::ExportRepro => {}
                 // The Music page: the situations' tracks, and playing one now.
                 Event::ListMusicTracks => self.ui.options.music_groups = self.music_groups(),
                 Event::PlayMusicTrack(event, track) => self.play_music_track(&event, &track),

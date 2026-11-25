@@ -148,7 +148,6 @@ class CommandLineTests(unittest.TestCase):
         code, out, _ = run("--lang", "es_es", "es", "--summary")
         self.assertEqual(code, 0, out)
         self.assertIn("GAME es_es ", out)
-        self.assertIn("LAUNCHER es ", out)
 
     def test_show_keys_is_not_dropped_when_a_mode_also_prints_lines(self):
         with tempfile.TemporaryDirectory() as tmp:

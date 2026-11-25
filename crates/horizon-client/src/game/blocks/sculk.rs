@@ -25,13 +25,6 @@ use horizon_world::registry::BlockStateId;
 use mod_api::client::particles::PositionSource;
 use std::collections::HashSet;
 
-pub const HELP: &[&str] = &[
-    "sculk                          sculk listeners, the warning level and the darkness blend",
-    "sculk charge X Y Z AMOUNT      a mob dying there with that much experience (the nearest catalyst takes it)",
-    "sculk warn LEVEL               set the player's warden warning level",
-    "sculk dig                      end the minute of calm of every warden",
-];
-
 /// The sculk block kinds by state id, built once.
 #[derive(Default)]
 struct Tables {
@@ -266,65 +259,6 @@ impl Game<'_> {
         out
     }
 
-    /// The `sculk` control command: listeners and their vibrations, or a
-    /// test charge for the nearest catalyst.
-    pub(super) fn sculk_command(&mut self, words: &[&str]) -> Result<serde_json::Value> {
-        match words.get(1).copied() {
-            Some("charge") => {
-                let num = |i: usize| -> Result<f64> {
-                    Ok(words.get(i).ok_or("missing argument")?.parse::<f64>()?)
-                };
-                let at = [num(2)?, num(3)?, num(4)?];
-                let amount = num(5)? as u32;
-                let taken = self.catalyst_takes_experience(at, |_| amount);
-                Ok(serde_json::json!({ "ok": true, "taken": taken }))
-            }
-            Some("dig") => {
-                // Let every warden's minute of calm run out.
-                for m in self
-                    .mobs
-                    .iter_mut()
-                    .filter(|m| m.species() == Species::Warden)
-                {
-                    warden::expire_dig_cooldown(m);
-                }
-                Ok(serde_json::json!({ "ok": true }))
-            }
-            Some("warn") => {
-                let level = words.get(2).ok_or("missing level")?.parse::<i32>()?;
-                self.sculk.tracker.set_warning_level(level);
-                Ok(serde_json::json!({ "ok": true }))
-            }
-            _ => Ok(self.sculk_status()),
-        }
-    }
-    /// The `sculk` control command's listing.
-    pub(super) fn sculk_status(&self) -> serde_json::Value {
-        let listeners: Vec<serde_json::Value> = self
-            .sculk
-            .index
-            .iter()
-            .filter_map(|key| match self.world.block_entities.get(key) {
-                Some(BlockEntity::Sculk(e)) => Some(serde_json::json!({
-                    "pos": [key.0, key.1, key.2],
-                    "kind": e.id(),
-                    "current": e.vibration.current.map(|i| i.event),
-                    "travel": e.vibration.travel,
-                    "last_frequency": e.last_frequency,
-                    "warning_level": e.warning_level,
-                    "cursors": e.spreader.cursors.len(),
-                })),
-                _ => None,
-            })
-            .collect();
-        serde_json::json!({
-            "listeners": listeners,
-            "warning_level": self.sculk.tracker.warning_level,
-            "cooldown": self.sculk.tracker.cooldown_ticks,
-            "darkness": self.sculk.darkness.1,
-            "chunks_known": self.sculk.known.len(),
-        })
-    }
     /// `WardenSpawnTrackerCommand`: the source player's tracker, cleared or set
     /// to a warning level (`getPlayerOrException`: a mob or the server is refused).
     pub(super) fn cmd_warden_spawn_tracker(&mut self, level: Option<i32>) -> R<i32> {

@@ -12,7 +12,7 @@ use horizon_client::client_perf::{
     self, ClientPerf,
     request::{
         self, Failed, GpuSwitch, Marked, Opened, ProfileSide, Request, Shared, StartOptions,
-        Started, Status, Stopped, Traced,
+        Started, Status, Stopped,
     },
 };
 use horizon_client::command::{Arg, Dispatcher, PROFILER_GPU, Registries};
@@ -38,36 +38,6 @@ const PROGRESS_EVERY: Duration = Duration::from_secs(2);
 const ENV_DIR: &str = "HORIZON_PROFILE";
 /// The file `HORIZON_TRACE` names: a timeline-only capture written there.
 const ENV_TRACE: &str = "HORIZON_TRACE";
-
-const TRACE_USAGE: &str = "trace [FILE [SECONDS] | stop]";
-
-/// What the `trace` words ask for.
-#[derive(Debug, PartialEq, Eq)]
-enum Trace<'a> {
-    Status,
-    Stop,
-    Start { file: &'a str, seconds: Option<u32> },
-}
-
-/// The words after `trace`; SECONDS is a whole number in 1..=`MAX_WINDOW_S`, as for `profile --seconds`.
-fn parse_trace<'a>(words: &[&'a str]) -> std::result::Result<Trace<'a>, &'static str> {
-    match words {
-        [] => Ok(Trace::Status),
-        ["stop"] => Ok(Trace::Stop),
-        [file] => Ok(Trace::Start {
-            file,
-            seconds: None,
-        }),
-        [file, seconds] => match seconds.parse::<u32>() {
-            Ok(s) if s >= 1 && f64::from(s) <= server_perf::MAX_WINDOW_S => Ok(Trace::Start {
-                file,
-                seconds: Some(s),
-            }),
-            _ => Err(TRACE_USAGE),
-        },
-        _ => Err(TRACE_USAGE),
-    }
-}
 
 const NO_CAPTURE: &str = "no capture is running; start one with profile start";
 
@@ -418,14 +388,6 @@ fn profiler_words(literals: &[String], name: Option<&str>) -> Vec<String> {
 }
 
 impl Game<'_> {
-    /// `profile [client|server] start|stop|status|mark`; None while a `stop` waits for its file.
-    pub(super) fn profile_command(
-        &mut self,
-        words: &[&str],
-        reply: &Sender<String>,
-    ) -> Result<Option<serde_json::Value>> {
-        self.run_profile(words, reply, Trigger::Ctl)
-    }
 
     fn run_profile(
         &mut self,
@@ -499,45 +461,6 @@ impl Game<'_> {
         }
     }
 
-    /// `trace [FILE [SECONDS] | stop]`: a timeline-only capture written to FILE; None while a `stop` waits for its file.
-    pub(super) fn trace_command(
-        &mut self,
-        words: &[&str],
-        reply: &Sender<String>,
-    ) -> Result<Option<serde_json::Value>> {
-        match parse_trace(words)? {
-            Trace::Status => json_of(&Traced {
-                ok: true,
-                tracing: self.profile.trace_file.is_some(),
-                file: self.profile.trace_file.clone(),
-            }),
-            Trace::Stop => {
-                if self.profile.trace_file.is_none() {
-                    return Err("no trace is being written".into());
-                }
-                self.stop_profile(StopReason::Normal)?;
-                self.profile.reply = Some(reply.clone());
-                Ok(None)
-            }
-            Trace::Start { file, seconds } => {
-                let options = StartOptions {
-                    seconds,
-                    samples: false,
-                    timeline: true,
-                    file: Some(PathBuf::from(file)),
-                    ..StartOptions::default()
-                };
-                self.start_profile(None, &options, Trigger::Ctl)
-                    .map_err(|e| format!("trace {file}: {e}"))?;
-                json_of(&Traced {
-                    ok: true,
-                    tracing: true,
-                    file: Some(file.to_owned()),
-                })
-            }
-        }
-    }
-
     fn profile_busy(&self) -> bool {
         self.profile.perf.capturing()
             || self.profile.perf.saving()
@@ -557,7 +480,7 @@ impl Game<'_> {
         if side == Some(ProfileSide::Server) {
             return self.start_server_only(options, trigger);
         }
-        let trigger = if trigger == Trigger::Ctl && self.options.benchmark.is_some() {
+        let trigger = if false {
             Trigger::Benchmark
         } else {
             trigger
@@ -1213,37 +1136,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    fn start<'a>(
-        file: &'a str,
-        seconds: Option<u32>,
-    ) -> std::result::Result<Trace<'a>, &'static str> {
-        Ok(Trace::Start { file, seconds })
-    }
-
-    #[test]
-    fn trace_words() {
-        assert_eq!(parse_trace(&[]), Ok(Trace::Status));
-        assert_eq!(parse_trace(&["stop"]), Ok(Trace::Stop));
-        assert_eq!(
-            parse_trace(&["/tmp/a.hzperf"]),
-            start("/tmp/a.hzperf", None)
-        );
-        assert_eq!(parse_trace(&["a", "2"]), start("a", Some(2)));
-        assert_eq!(parse_trace(&["a", "1"]), start("a", Some(1)));
-        assert_eq!(parse_trace(&["a", "600"]), start("a", Some(600)));
-    }
-
-    #[test]
-    fn trace_seconds_out_of_range_are_usage_errors() {
-        for bad in ["0", "601", "99999", "-1", "1.5", "x", ""] {
-            assert_eq!(
-                parse_trace(&["a", bad]),
-                Err(TRACE_USAGE),
-                "seconds {bad:?}"
-            );
-        }
-        assert_eq!(parse_trace(&["a", "2", "3"]), Err(TRACE_USAGE));
-    }
     use crate::game::integrated::capture::Phase;
     use std::time::Duration;
 

@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 import zipfile
 
-from tools import agent_control_e2e, check_public_tree, lab
+from tools import check_public_tree, lab
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -378,18 +378,6 @@ class LinkDirTests(unittest.TestCase):
             self.assertEqual((work / "26.3" / "kept.json").read_text(), "{}")
             shutil.rmtree(work)
             self.assertTrue((target / "kept.json").exists())
-
-
-class GameEnvScreenTests(unittest.TestCase):
-    def test_macos_and_windows_start_no_virtual_screen(self):
-        for platform in ("darwin", "win32"):
-            with self.subTest(platform=platform), mock.patch.object(sys, "platform", platform),                     mock.patch.dict(os.environ, {}, clear=False),                     mock.patch.object(agent_control_e2e.subprocess, "run") as run,                     tempfile.TemporaryDirectory() as home:
-                os.environ.pop("DISPLAY", None)
-                env = agent_control_e2e.game_env("e2e", home=home)
-                run.assert_not_called()
-                self.assertEqual(env["HORIZON_HOME"], home)
-                self.assertNotIn("VSCREEN", env)
-
 
 
 class ScratchCleanupTests(unittest.TestCase):

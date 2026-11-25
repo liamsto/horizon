@@ -52,7 +52,6 @@ impl Game<'_> {
         // icon, an agent capture).
         let busy = self.ui.screenshot_hook.load(Ordering::Relaxed)
             || !self.ui.screenshot_writes.is_empty()
-            || self.screenshot_sequence.is_some()
             || self
                 .renderer
                 .as_ref()

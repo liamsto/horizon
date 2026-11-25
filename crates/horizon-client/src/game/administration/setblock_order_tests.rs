@@ -57,7 +57,8 @@ fn game(resources: &mut Option<std::sync::Arc<Resources>>) -> Game<'_> {
 }
 
 fn at(game: &Game<'_>, x: i32, y: i32, z: i32) -> String {
-    game.state_string(game.world.block(x, y, z))
+    game.block_state_string(game.world.block(x, y, z))
+        .unwrap_or_else(|| "?".into())
 }
 
 fn run(game: &mut Game<'_>, commands: &[&str]) {

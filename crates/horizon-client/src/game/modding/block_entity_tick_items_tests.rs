@@ -5,8 +5,7 @@ use horizon_client::{
     items::ItemStack,
 };
 use mod_api::{
-    BlockEntityPart, BlockEntityTickEvent, BlockPart, EntityLeaveLevelEvent, Hooks,
-    HostTransaction, ItemPlace, Registrar, ServerHost,
+    BlockEntityPart, BlockEntityTickEvent, BlockPart, EntityLeaveLevelEvent, Hooks, Registrar, ServerHost,
 };
 use std::sync::{
     Arc,
@@ -15,7 +14,6 @@ use std::sync::{
 
 static FIRST: AtomicU32 = AtomicU32::new(0);
 static SECOND: AtomicU32 = AtomicU32::new(0);
-static WRITTEN: AtomicBool = AtomicBool::new(false);
 static OBSERVED: AtomicBool = AtomicBool::new(false);
 static NOTIFICATIONS: AtomicU32 = AtomicU32::new(0);
 struct Consume;
@@ -23,79 +21,6 @@ struct Consume;
 impl BlockPart for Consume {}
 #[mod_api::horizon_part]
 impl BlockEntityPart for Consume {
-    fn block_entity_tick(&self, host: &mut dyn ServerHost, event: &mut BlockEntityTickEvent<'_>) {
-        if WRITTEN.swap(true, Ordering::Relaxed) {
-            return;
-        }
-        let first = host.entity(FIRST.load(Ordering::Relaxed)).unwrap();
-        let second = host.entity(SECOND.load(Ordering::Relaxed)).unwrap();
-        let item = host.item_entity(first).unwrap();
-        let stack = ItemStack::new("minecraft:stone", 2).try_into_api().unwrap();
-        let case = std::env::var("ROW4_NATIVE_CASE").unwrap();
-        if case == "unchanged" {
-            *event.reply = mod_api::BlockEntityTickReply::Unchanged;
-        }
-        if case == "invalid_setter" {
-            let invalid = ItemStack::new("minecraft:stone", 65)
-                .try_into_api()
-                .unwrap();
-            assert!(item.set_stack(host, invalid).is_err());
-            assert_eq!(item.stack(host).unwrap().count(), 5);
-            return;
-        }
-        event.entity.data.push(6);
-        event.entity.items = vec![Some(
-            ItemStack::new("minecraft:stone", 6).try_into_api().unwrap(),
-        )];
-        if case.starts_with("wasm_") {
-            super::block_entity_tick_wasm_tests::tick(host, event, first, second, stack, &case);
-            return;
-        }
-        assert_eq!(item.set_stack(host, stack), Ok(true));
-        assert_eq!(item.stack(host).unwrap().count(), 2);
-        assert_eq!(
-            ItemPlace::ItemEntity { id: first.id() }
-                .stack(host)
-                .unwrap()
-                .count(),
-            2
-        );
-        if case == "nested_abort" {
-            let aborted: Result<(), ()> = host.transaction(|host, _| {
-                assert_eq!(
-                    item.set_stack(
-                        host,
-                        ItemStack::new("minecraft:stone", 1).try_into_api().unwrap()
-                    ),
-                    Ok(true)
-                );
-                assert_eq!(item.stack(host).unwrap().count(), 1);
-                Err(())
-            });
-            assert_eq!(aborted, Err(()));
-            assert_eq!(item.stack(host).unwrap().count(), 2);
-        }
-        assert!(second.discard(host));
-        assert!(host.entity(second.id()).is_none());
-        assert!(host.item_entity(second).is_none());
-        assert!(
-            ItemPlace::ItemEntity { id: second.id() }
-                .stack(host)
-                .is_none()
-        );
-        let level = host.level("minecraft:overworld").unwrap();
-        assert!(!level.all_entities(host).unwrap().contains(&second));
-        if case == "removed" {
-            assert!(level.remove_block(host, event.pos, false));
-        }
-        if std::env::var("ROW4_NATIVE_CASE").as_deref() == Ok("invalid_stack") {
-            event.entity.items = vec![Some(
-                ItemStack::new("minecraft:stone", 65)
-                    .try_into_api()
-                    .unwrap(),
-            )];
-        }
-    }
 }
 struct Observe;
 #[mod_api::horizon_part]

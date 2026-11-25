@@ -923,39 +923,6 @@ impl Game<'_> {
         }
         Some(id)
     }
-    /// Default position for a summon command (3 blocks in front of the player).
-    pub(super) fn default_summon_position(&self) -> Result<[f64; 3]> {
-        let p = self.player.as_ref().ok_or("no player yet")?;
-        let d = view_vector(self.yaw, 0.0);
-        Ok([
-            p.position.x + d[0] * 3.0,
-            p.position.y,
-            p.position.z + d[2] * 3.0,
-        ])
-    }
-    /// The `summon` command: spawn a mob in front of the player or at a position.
-    pub(super) fn summon_command_mob(
-        &mut self,
-        kind: &str,
-        at: Option<[f64; 3]>,
-        baby: bool,
-    ) -> Result<u32> {
-        let at = match at {
-            Some(a) => a,
-            None => self.default_summon_position()?,
-        };
-        let id = self
-            .spawn_mob_spawned(kind, at, SpawnSite::Finalizing(SpawnReason::Command))
-            .ok_or_else(|| format!("unknown or unsupported mob {kind}"))?;
-        if baby && let Some(m) = self.mobs.iter_mut().find(|m| m.id == id) {
-            m.extra.age = if m.species() == Species::Sniffer {
-                horizon_client::mobs::sniffer::BABY_START_AGE
-            } else {
-                -24000
-            };
-        }
-        Ok(id)
-    }
     /// The `mobs` command: nearby mobs with position, health and running goals.
     pub(super) fn control_mobs(&self, radius: f64) -> serde_json::Value {
         let center = self.player.as_ref().map_or(Vec3::ZERO, |p| p.position);

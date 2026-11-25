@@ -894,57 +894,6 @@ fn a_replay_open_never_displaces_a_joining_or_multiplayer_session() {
     );
 }
 
-/// The control socket's seek goes the way chat's, Studio's and mods' do: to the end, the world
-/// is brought there and the clock reports exactly that, ended.
-#[test]
-#[ignore = "daily"]
-fn a_control_socket_seek_to_the_end_brings_the_world_there() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("trip.mcpr");
-    write_packets(
-        &path,
-        1_000,
-        vec![(0, login_packet()), (400, chat_packet("said at 400"))],
-    );
-    let said = |game: &crate::game::Game<'_>| {
-        game.ui
-            .chat
-            .recent_lines(10)
-            .iter()
-            .any(|line| line == "said at 400")
-    };
-    let heard = with_heard(|game| {
-        game.replay.recordings_dir = Some(root.path().to_path_buf());
-        let answer = game
-            .open_studio_replay(&path.display().to_string())
-            .unwrap();
-        assert_eq!(answer["ok"], true);
-        assert!(!said(game), "not yet played");
-        let answer = game
-            .studio_control(&["studio", "replay", "seek", "1000"])
-            .unwrap()
-            .unwrap();
-        assert_eq!(answer["position_ms"], 1_000);
-        let state = game.replay_state().unwrap();
-        assert_eq!((state.position_ms, state.ended), (1_000, true));
-        assert!(
-            said(game),
-            "the world at the end holds what was said before it"
-        );
-        assert!(
-            game.replay.seek_report,
-            "reported as a seek, on the next frame"
-        );
-        frame(game, 100);
-        game.replay_close().unwrap();
-        game.native_replay_requests();
-    });
-    assert_eq!(
-        heard,
-        ["opened trip 1000 true #0", "advanced 1000", "closed trip"]
-    );
-}
-
 /// A recording 0 ms long still hands out its snapshot after a restart: its clock is at the end
 /// at once, and the packets stamped there come out on the next frame, once.
 #[test]
@@ -1849,80 +1798,6 @@ impl PacketSource for FailingReads {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self.0.as_any_mut()
     }
-}
-
-/// A read that fails while a replay seeks or plays ends it as a close does: mods hear it closed
-/// once, a standalone replay's session goes, and the seek's caller gets the error. A refused
-/// backward seek of an in-world replay ends nothing.
-#[test]
-#[ignore = "daily"]
-fn a_failed_read_ends_the_replay_as_a_close_does() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("worn.mcpr");
-    write_recording(&path, 1_000, &[200, 600]);
-    let open = |game: &mut crate::game::Game<'_>| {
-        let answer = game
-            .open_studio_replay(&path.display().to_string())
-            .unwrap();
-        assert_eq!(answer["ok"], true);
-        let driver = game.replay.driver.take().unwrap();
-        game.replay.driver = Some(Box::new(FailingReads(driver)));
-    };
-    let ended = |game: &mut crate::game::Game<'_>| {
-        assert_eq!(game.replay_state(), None);
-        assert!(game.remote.is_none(), "the replay's session went");
-        frame(game, 16);
-        game.native_replay_requests();
-    };
-    let heard = with_heard(|game| {
-        // A seek back rebuilds; a seek forward whose read fails falls back to a rebuild.
-        for target in [0, 900] {
-            open(game);
-            assert!(game.seek_studio_replay(target).is_err());
-            ended(game);
-        }
-        open(game);
-        game.replay_seek(900).unwrap();
-        game.native_replay_requests();
-        ended(game);
-        open(game);
-        let answer = game
-            .studio_control(&["studio", "replay", "seek", "900"])
-            .unwrap()
-            .unwrap();
-        assert_eq!(answer["error"], "injected read failure");
-        ended(game);
-        open(game);
-        assert!(game.studio_command("studio replay seek 900"));
-        ended(game);
-        open(game);
-        frame(game, 16);
-        ended(game);
-
-        play(game, 10_000);
-        let mut clock = Clock::new(10_000);
-        clock.seek(500).unwrap();
-        game.replay.driver = Some(Box::new(FailingReads(Box::new(clock))));
-        assert_eq!(
-            game.seek_studio_replay(100).unwrap_err().kind(),
-            io::ErrorKind::Unsupported
-        );
-        assert!(game.replay_state().is_some(), "refused, not ended");
-        assert!(game.seek_studio_replay(800).is_err());
-        assert_eq!(game.replay_state(), None);
-    });
-    let closed: Vec<_> = heard
-        .iter()
-        .filter(|line| line.starts_with("closed"))
-        .collect();
-    // A replay opened by path has no recording id.
-    assert_eq!(
-        closed,
-        ["closed "; 6]
-            .into_iter()
-            .chain(["closed demo"])
-            .collect::<Vec<_>>()
-    );
 }
 
 /// A close whose save of the edited camera path fails keeps the path in a new draft beside the

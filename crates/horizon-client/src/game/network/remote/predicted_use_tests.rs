@@ -1,29 +1,9 @@
 //! The real control hand loop, with identical native and compiled-wasm listeners.
 use super::*;
-#[path = "../../../../../horizon-mod-wasm/tests/fixture/src/predicted_use.rs"]
-mod fixture;
 
 struct Native;
 #[mod_api::__subscriptions]
 impl Hooks for Native {
-    fn register(&self, registrar: &mut dyn Registrar, _: &mod_api::RegistrationContext) {
-        fixture::register(registrar);
-    }
-    fn entity_interact(
-        &self,
-        host: HostSide<'_>,
-        event: &mut mod_api::EntityInteractEvent<'_>,
-    ) -> Option<Answer> {
-        fixture::entity_interact(host, event)
-    }
-    fn client_packet_send(
-        &self,
-        _: &dyn mod_api::ClientHost,
-        event: &mut mod_api::ClientPacketSendEvent<'_>,
-    ) -> Flow {
-        fixture::packet(event);
-        Flow::Continue
-    }
 }
 
 fn matrix(mods: mod_api::Mods) {
@@ -157,39 +137,3 @@ fn native_client_prediction_owns_the_hand_loop() {
     );
 }
 
-#[test]
-#[ignore = "daily"]
-fn wasm_client_prediction_owns_the_hand_loop() {
-    crate::game::in_own_process(
-        "game::remote::interaction_event_tests::predicted_use_tests::wasm_client_prediction_owns_the_hand_loop",
-        || {
-            horizon_guest_stack::run_on_guest_stack(|| {
-                horizon_mod_wasm::copy_probe::with_load_budget(|| {
-                    use horizon_mod_package::manifest::Package;
-                    use horizon_mod_wasm::{WasmPackage, load};
-                    let path =
-                        std::path::PathBuf::from(std::env::var_os("HORIZON_WASM_FIXTURE").unwrap());
-                    let manifest = Package::read(&path).unwrap().manifest;
-                    let info = mod_api::PackageInfo::new(
-                        manifest.id.clone(),
-                        manifest.version.clone(),
-                        mod_api::PackageKind::Code,
-                        mod_api::Side::Both,
-                        vec![manifest.id.clone()],
-                        vec![],
-                    );
-                    let loaded = load(
-                        &std::fs::read(std::env::var_os("HORIZON_WASM_STD").unwrap()).unwrap(),
-                        vec![WasmPackage {
-                            manifest,
-                            module: Package::read_wasm(&path).unwrap(),
-                        }],
-                    );
-                    assert!(loaded.refused.is_empty(), "{:?}", loaded.refused);
-                    loaded.initialize(&[info]).unwrap();
-                    matrix(loaded.mods.into());
-                })
-            })
-        },
-    );
-}

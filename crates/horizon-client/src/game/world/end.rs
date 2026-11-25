@@ -273,10 +273,6 @@ impl EndState {
     pub(super) fn clear_remote_eyes(&mut self) {
         self.eyes.clear();
     }
-    /// Where each eye is, for `status`.
-    pub(super) fn eye_positions(&self) -> impl Iterator<Item = (u32, [f64; 3])> {
-        self.eyes.iter().map(|e| (e.id, e.position.to_array()))
-    }
 }
 
 /// An eye of ender from `/summon` or a saved chunk. `signalTo` never ran for

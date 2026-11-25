@@ -1394,24 +1394,6 @@ impl Game<'_> {
             self.update_map(id);
         }
     }
-    /// The maps the player carries, for `status`: how many of their pixels
-    /// are drawn, and their decorations.
-    pub(super) fn maps_status(&self) -> Vec<serde_json::Value> {
-        self.inventory
-            .iter()
-            .chain(std::iter::once(&self.offhand))
-            .flatten()
-            .filter_map(map_id)
-            .filter_map(|id| {
-                let m = self.maps.data.get(&id)?;
-                Some(serde_json::json!({
-                    "id": id,
-                    "pixels": m.colors.iter().filter(|&&c| c != 0).count(),
-                    "decorations": m.decorations.iter().map(|d| d.sprite).collect::<Vec<_>>(),
-                }))
-            })
-            .collect()
-    }
     /// `ServerPlayer.synchronizeSpecialItemUpdates` for each map the guest
     /// carries, and every 10 ticks (`ServerEntity.sendChanges`) for each map
     /// framed in the level: a `ClientboundMapItemDataPacket` when something

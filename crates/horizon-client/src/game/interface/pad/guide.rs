@@ -14,7 +14,6 @@ use horizon_client::{
     items::ItemStack,
     mobs::{Species, equine, llama},
 };
-use serde_json::{Value, json};
 
 /// A row as last drawn, for `pad status`.
 pub(in crate::game) struct Shown {
@@ -268,29 +267,6 @@ impl Game<'_> {
             });
         }
         widest
-    }
-
-    /// The rows last drawn, for `pad status`.
-    pub(in crate::game) fn pad_guide_status(&self) -> Value {
-        let pad = &self.settings.controller;
-        let column = |left: bool| -> Vec<Value> {
-            self.pad
-                .guide_shown
-                .iter()
-                .filter(|s| s.left == left)
-                .map(|s| {
-                    json!({
-                        "with": s.row.with.and_then(|w| w.button(pad)).map(|b| b.name()),
-                        "button": s.row.of.button(pad).map(|b| b.name()),
-                        "label": self.glyph(s.row.of).map(|g| g.label()),
-                        "caption": s.row.caption,
-                        "rect": s.rect,
-                    })
-                })
-                .collect()
-        };
-        let view = self.gui_batch().map(|b| [b.width, b.height]);
-        json!({ "left": column(true), "right": column(false), "view": view })
     }
 
     fn pad_guide_facts(&mut self) -> Facts {

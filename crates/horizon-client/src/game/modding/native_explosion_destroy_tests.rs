@@ -4,13 +4,13 @@
 #![cfg(test)]
 use crate::game::Game;
 use crate::game::native_entity_refs::tests::{bind_local_player, run_on_guest_stack, with_game};
-use crate::game::native_explosion_resistance_tests::{BOTH, Via, wasm_answer};
+use crate::game::native_explosion_resistance_tests::{BOTH, Via};
 use horizon_client::{chunk::Chunk, mobs::Who, motion::PlayerMotion};
 use horizon_core::{geometry::Vec3, position::ChunkPos, random::RandomSource};
 use mod_api::{
     BlockPart, EntityRef, ExplosionDestroyError, ExplosionDetonateEvent, ExplosionInteraction,
     ExplosionStartEvent, Flow, ModEntry, OnBlockExplodedEvent, Registrar, RegistrationContext,
-    ServerHost, wire::Writer,
+    ServerHost,
 };
 use std::sync::{
     Arc, Mutex,
@@ -59,23 +59,6 @@ fn destroy(
             ),
             expected
         ),
-        Via::Wasm => {
-            let mut input = Writer::new();
-            input.put(&level);
-            input.put(&positions.to_vec());
-            input.put(&blast.source);
-            input.put(&blast.center);
-            input.put(&blast.radius);
-            input.put(&blast.fire);
-            input.put(&blast.interaction);
-            wasm_answer(
-                game,
-                level,
-                "level_explosion_destroy_blocks",
-                input,
-                &expected,
-            );
-        }
     }
 }
 

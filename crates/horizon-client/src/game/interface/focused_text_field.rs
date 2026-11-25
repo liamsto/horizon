@@ -2,7 +2,7 @@
 //! `TextEdit`, whose edits go back through the box's own filter, length limit and responders.
 //! The boxes with validators of their own (Options, World Options, the game rules, the block
 //! editor) are not offered.
-use super::{Game, Screen, control};
+use super::{Game, Screen, text_input};
 use horizon_client::{
     chat::Commands,
     screen_draw::{Measure, TextField},
@@ -44,7 +44,7 @@ impl Game<'_> {
     /// The box a typed character goes to (`type_chars_into_screen`'s choice), as it stands
     /// after `edited` when there is one, whose responders then run.
     fn focused_text_edit(&mut self, edited: Option<&TextEdit>) -> Option<TextEdit> {
-        if control::title_owns_text(&self.screen, self.title.is_some()) {
+        if text_input::title_owns_text(&self.screen, self.title.is_some()) {
             let mut state = None;
             self.title
                 .as_mut()?

@@ -531,8 +531,6 @@ impl Game<'_> {
         // Compatibility for gameplay checks outside startup/world loading.
         options.dedicated = Some(Vec::new());
         options.execution_role = ExecutionRole::IntegratedServer;
-        options.control = None;
-        options.benchmark = None;
         options.frames = None;
         options.world_frames = None;
         options.report = None;
@@ -826,12 +824,6 @@ impl Game<'_> {
         let mut failure = None;
         while !flags.stop.load(Ordering::Relaxed) {
             self.run_tasks();
-            if self.agent.hold_server {
-                // Keep servicing control requests so the fixture can release the barrier.
-                // Unlike /tick freeze, no player's queued packets are applied here.
-                self.wait_for_next_server_tick(&mut next, true);
-                continue;
-            }
             self.server_tick_deadline = Some(next + self.clock.tick_duration());
             let paused = flags.paused.load(Ordering::Relaxed);
             let ticked =
@@ -1134,97 +1126,6 @@ impl Game<'_> {
     /// Whether this game is an integrated server's.
     pub(super) fn serving(&self) -> bool {
         self.serving.is_some()
-    }
-    /// The window's agent runs a command as single player's console does
-    /// (`as_console`, as without a server thread): as the world's owner, in
-    /// the owner's level, at the owner permission level. The feedback goes to
-    /// the owner's chat and is returned.
-    pub(super) fn owner_console_command(&mut self, command: &str) -> Vec<String> {
-        // Test-only, as on the dedicated console: sync the randoms on this server thread, in the owner's level.
-        #[cfg(feature = "state-digest")]
-        if let Some(rest) = command.trim_start_matches('/').strip_prefix("digest-sync")
-            && (rest.is_empty() || rest.starts_with(char::is_whitespace))
-        {
-            let args: Vec<&str> = rest.split_whitespace().collect();
-            // The owner's level is the one to sync. It must be the level in place: syncing any other one, or
-            // the level in place after a failed switch, would report success for the wrong level.
-            let owner = self.serving.as_ref().map(|s| s.owner);
-            let owner_dim = self.lan.as_ref().and_then(|h| {
-                h.hub.guests.iter().find(|g| Some(g.uuid) == owner).map(|g| g.dimension.clone())
-            });
-            let Some(owner_dim) = owner_dim else {
-                return vec!["digest-sync: the owner is not in the world yet".to_owned()];
-            };
-            if super::Dim::from_id(&owner_dim) != self.dim {
-                return vec![format!(
-                    "digest-sync: the owner is in {owner_dim}, not the level in place; nothing changed"
-                )];
-            }
-            return vec![match self.state_digest_sync(&args) {
-                Ok(()) => {
-                    self.state_digest_rank_joins();
-                    "digest-sync done".to_owned()
-                }
-                Err(e) => format!("digest-sync: {e}"),
-            }];
-        }
-        let Some(owner) = self.serving.as_ref().map(|s| s.owner) else {
-            return Vec::new();
-        };
-        let Some(host) = self.lan.as_ref() else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        if let Some(g) = host.hub.guests.iter().find(|g| g.uuid == owner && g.placed) {
-            let conn = g.conn;
-            // Commands.performCommand runs in the player's level.
-            let (back, theirs) = (self.dim, super::Dim::from_id(&g.dimension));
-            let entered = theirs == back || self.enter_level(theirs).is_ok();
-            if entered && let Some(swap) = self.enter_guest_in_dimension(conn, back) {
-                let command = command.strip_prefix('/').unwrap_or(command).to_owned();
-                let lines = self.as_console(|g| {
-                    g.chat_capture = Some(Vec::new());
-                    // A command a native mod registered goes to the mods
-                    // first, as the owner's own chat does (the console is
-                    // level 4, so every registered usage is allowed).
-                    if !g.perform_native_command(conn, 4, command.trim()) {
-                        g.run_command(&command);
-                    }
-                    g.chat_capture.take().unwrap_or_default()
-                });
-                self.leave_guest(swap);
-                if let Some(host) = self.lan.as_mut() {
-                    host.hub.sync_all_effects();
-                }
-                // A teleport into another level happens before its feedback is
-                // sent, and what the command earned is announced before it too.
-                self.run_level_teleports();
-                self.announce_guest_advancements();
-                for line in lines {
-                    out.push(line.plain());
-                    if let Some(host) = self.lan.as_ref() {
-                        host.hub.send_to(
-                            conn,
-                            &horizon_protocol::packets::play::Clientbound::SystemChat(
-                                horizon_protocol::packets::play::SystemChat {
-                                    content: horizon_client::lan::data::component_nbt(
-                                        &line.component(),
-                                    ),
-                                    overlay: false,
-                                },
-                            ),
-                        );
-                    }
-                }
-                self.send_admin_feedback(Some(conn));
-            }
-            if theirs != back
-                && let Err(e) = self.enter_level(back)
-            {
-                log::error!("could not reopen {}: {e}", back.id());
-            }
-        }
-        out
     }
 
     /// Run `f` with the owner's level in place (the server holds one per

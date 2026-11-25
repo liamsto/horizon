@@ -288,18 +288,11 @@ impl Split<'_> {
             self.host.pad.release_hardware();
         }
         let owner = self.p1_pad.owner;
-        // Only something on the control socket can ask.
-        if self.host.control.is_some() {
-            self.pads.report_status(&mut self.host.pad, owner);
-        }
         let state = self.pad_state(owner);
         let peaks = self.pad_peaks(owner);
         self.host.pad.feed_from(owner, state, peaks);
         for i in 0..self.guests.len() {
             let pad = self.guests[i].pad;
-            if self.guests[i].game.control.is_some() {
-                self.pads.report_status(&mut self.guests[i].game.pad, pad);
-            }
             let state = self.pad_state(pad);
             let peaks = self.pad_peaks(pad);
             self.guests[i].game.pad.feed_from(pad, state, peaks);

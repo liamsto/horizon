@@ -2709,12 +2709,6 @@ impl Game<'_> {
         self.potions = PotionState::default();
         self.potions.effects = PlayerEffects::from_saved(&self.level.active_effects);
     }
-    pub(super) fn effects_json(&self) -> serde_json::Value {
-        serde_json::json!({
-            "active": self.potions.effects.list.iter().map(|e| serde_json::json!({ "id": e.id, "duration": e.duration, "amplifier": e.amplifier })).collect::<Vec<_>>(),
-            "thrown": self.potions.thrown.iter().map(|t| [t.position.x, t.position.y, t.position.z]).collect::<Vec<_>>(),
-        })
-    }
 }
 
 /// A mob's content mod effects tick in its own tick (`ai::tick_effects`).

@@ -4112,37 +4112,6 @@ impl Game<'_> {
     }
 }
 impl Game<'_> {
-    /// The dragon and fight for `horizon-ctl status`.
-    pub(super) fn dragon_status(&self) -> serde_json::Value {
-        serde_json::json!({
-            "dragon": self.dragon.as_ref().map(|d| serde_json::json!({
-                "id": d.id,
-                "position": [d.position.x, d.position.y, d.position.z],
-                "health": d.health,
-                "phase": d.phase.id(),
-                "death_time": d.death_time,
-                // The player it strafes: "host", or the guest's entity id.
-                "strafing": match &d.phase {
-                    Phase::Strafe { player: Some(FightWho::Host), .. } => serde_json::json!("host"),
-                    Phase::Strafe { player: Some(FightWho::Guest(conn)), .. } => serde_json::json!(
-                        self.lan.as_ref().and_then(|h| h.hub.guest(*conn)).map(|g| g.entity_id)
-                    ),
-                    _ => serde_json::Value::Null,
-                },
-            })),
-            "players": self.fight.players,
-            "crystals": self.crystals.len(),
-            // The tracked id (0 until tracked) and position of each crystal.
-            "crystal_list": self.crystals.iter().map(|c| serde_json::json!({
-                "id": c.id,
-                "position": [c.position.x, c.position.y, c.position.z],
-            })).collect::<Vec<_>>(),
-            "alive_crystals": self.fight.alive_crystals,
-            "killed": self.fight.killed,
-            "exit_portal": self.fight.exit_portal,
-            "respawn": self.fight.respawn.map(|(s, t)| format!("{} {t}", s.name())),
-        })
-    }
 }
 /// Respawning the dragon with end crystals on the exit portal
 /// (`EndCrystalItem.useOn`, `EnderDragonFight.tryRespawn`, `DragonRespawnStage`).

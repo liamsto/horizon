@@ -495,12 +495,6 @@ impl Game<'_> {
         self.pad_look(seconds);
     }
 
-    /// The keyboard or mouse acted in play (a key or button pressed): it has control again, though
-    /// only moving the mouse takes a pad out of use.
-    pub(super) fn input_keyboard_used(&mut self) {
-        self.pad.keyboard_took_over = true;
-    }
-
     /// Whether the pointer event being handled is one a device made (a pad's menu cursor
     /// clicking), not the mouse's.
     pub(super) fn input_made_pointer_event(&self) -> bool {

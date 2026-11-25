@@ -138,7 +138,6 @@ fn load(folder: &Path) -> Result<Vec<&'static mod_api::__private::native::Native
 /// Start the fixed executable, registering checked native libraries before the engine seal.
 pub fn main() {
     horizon_guest_stack::run_main(|| {
-        crate::exit_if_compile_child();
         let startup = horizon_client::entry::prepare();
         let result = std::env::current_exe()
             .map_err(|e| e.to_string())

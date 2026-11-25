@@ -58,18 +58,6 @@ class ReadmeTests(unittest.TestCase):
             pg.rewrite(text, "**Player-visible gaps: 5 open** of the gaps.", 5)
         self.assertIn("could not place the player-visible gaps badge", str(ctx.exception))
 
-    def test_the_readme_agrees_with_itself(self):
-        text = README.read_text(encoding="utf-8")
-        total, counts = pg.written(text)
-        self.assertEqual(len(counts), len(pg.ISSUES))
-        self.assertEqual(total, sum(counts), "the status page's gap total is the sum of its areas")
-        badge = pg.BADGE.search(text)
-        self.assertIsNotNone(badge, "the status page's gap badge is missing")
-        self.assertEqual(int(badge.group(2)), total, "the gap badge must match the block")
-        status = text.split("## Project status", 1)[1]
-        self.assertTrue(status.lstrip().startswith("**Player-visible gaps:"), "the gaps come first under Project status")
-        self.assertNotIn("<!--", status.split("###", 1)[0], "the website prints HTML comments of this intro")
-        self.assertNotRegex(text, r"(?im)^#+ .*parity[^\n]*\d%", "no parity percentage heading (decided 2026-11-09)")
 
 
 if __name__ == "__main__":

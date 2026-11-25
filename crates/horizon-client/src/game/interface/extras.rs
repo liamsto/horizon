@@ -57,8 +57,7 @@ impl Game<'_> {
     }
     /// Once per frame: the frame's time, and keys let go behind screens.
     pub(super) fn extras_frame(&mut self, elapsed: Duration) {
-        // Under agent control the window may lack focus without pausing.
-        let focused = self.focused || self.control.is_some();
+        let focused = self.focused;
         let playing = self.screen == Screen::Playing && self.title.is_none() && focused;
         if !playing {
             self.extras.mouse = [false; 2];

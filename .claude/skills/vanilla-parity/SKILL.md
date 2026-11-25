@@ -1,6 +1,6 @@
 ---
 name: vanilla-parity
-description: Fix a Horizon bug or gap so it behaves 1:1 like vanilla 26.3, starting from the port ledger (tools/port_ledger.py) instead of grepping. Use for any issue, Discord report or PR that makes Horizon match vanilla: "X doesn't work like in Java", a missing sound, particle, animation, mob behaviour, block rule, screen or packet.
+description: Fix a Horizon bug or gap so it behaves 1:1 like vanilla 26.3, starting from the port ledger (tools/port_ledger.py) instead of grepping. Use for any change that makes Horizon match vanilla: "X doesn't work like in Java", a missing sound, particle, animation, mob behaviour, block rule, screen or packet.
 ---
 
 # Vanilla parity with the port ledger
@@ -51,7 +51,7 @@ line are in the output) and the Rust fn before changing anything.
 - Look at the neighbours the ledger lists for the same class: a `client` or `seam` gap next to your fix is
   usually the same bug on the other path.
 
-## 3. Before the PR
+## 3. Before committing
 
 ```sh
 python3 tools/port_ledger.py check --base origin/main
@@ -63,8 +63,7 @@ no new stale citation. If you ported a method the verdict map called `missing`, 
 `tools/port_map/*.tsv` to `port` with the fn (`file.rs::Owner::fn`) and run
 `python3 tools/port_ledger.py map-check tools/port_map/<file>.tsv`.
 
-Then the usual: the harness for the area (`docs/architecture.md`), `cargo check`/tests per `AGENTS.md`, and
-a small PR that says which vanilla method it now matches.
+Then the usual: the harness for the area (`docs/architecture.md`) and `cargo check`/tests per `CLAUDE.md`.
 
 ## Finding work
 

@@ -1014,17 +1014,6 @@ impl Game<'_> {
             ),
         );
     }
-    pub(super) fn recipe_book_flags(&self) -> Option<(bool, bool)> {
-        if self.native_screen_shown() {
-            return self.mod_book_flags();
-        }
-        let book = self.active_book()?;
-        Some((self.book_open(book), self.book_filtering(book)))
-    }
-    /// How many displays the client's book holds.
-    pub(super) fn recipe_book_known(&self) -> usize {
-        self.recipe_ui.client.displays().len()
-    }
     /// The next or previous page, as the arrows turn it: nothing past either end, or with a
     /// pointer button held.
     pub(super) fn pad_recipe_page(&mut self, next: bool) {

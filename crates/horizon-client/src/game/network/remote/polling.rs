@@ -3,27 +3,6 @@
 use super::*;
 
 impl Game<'_> {
-    /// The minecarts the server sent, for the control socket's `status`
-    /// (their velocity is not tracked here).
-    pub(super) fn remote_carts_body(&self) -> Option<Vec<serde_json::Value>> {
-        let r = self.remote.as_ref()?;
-        let mut carts: Vec<&Tracked> = r
-            .entities
-            .values()
-            .filter(|t| t.kind.ends_with("minecart"))
-            .collect();
-        carts.sort_by(|a, b| {
-            a.position
-                .partial_cmp(&b.position)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        Some(
-            carts
-                .into_iter()
-                .map(|t| serde_json::json!({"kind": t.kind, "position": t.position, "velocity": [0.0, 0.0, 0.0]}))
-                .collect(),
-        )
-    }
 
     /// This player's account: a splitscreen player's own, else the game's (P1's).
     pub(super) fn auth_body(&self) -> Option<std::sync::Arc<horizon_client::auth::AuthSession>> {
@@ -58,11 +37,6 @@ impl Game<'_> {
             .as_ref()
             .and_then(|r| r.menu.as_ref())
             .map_or(0, |m| m.0)
-    }
-    /// The server's last `n` chat lines, newest first.
-    pub(super) fn remote_chat_body(&self, n: usize) -> Option<Vec<String>> {
-        let r = self.remote.as_ref()?;
-        Some(r.chat.iter().rev().take(n).map(|l| l.0.clone()).collect())
     }
 
     /// Received events left for the next frame (`poll_remote`): until they

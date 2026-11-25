@@ -671,27 +671,6 @@ impl Levels {
         })
     }
 
-    /// The entities of a parked level, counted as `Game::entity_count` counts the one in place.
-    pub(super) fn parked_entity_count(&self, dim: Dim) -> Option<usize> {
-        let l = self.parked.get(&dim)?;
-        Some(
-            l.mobs.iter().filter(|m| !m.removed).count()
-                + l.dropped.len()
-                + l.orbs.len()
-                + l.projectiles.len()
-                + l.carts.len()
-                + l.boats.len()
-                + l.falling.len()
-                + l.paintings.len()
-                + l.item_frames.len()
-                + l.armor_stands.len()
-                + l.cushions.len()
-                + l.tridents.len()
-                + l.rockets.len()
-                + l.tnts.len(),
-        )
-    }
-
     /// The mobs of a parked level.
     pub(super) fn parked_mobs(&self, dim: Dim) -> Option<&[Mob]> {
         self.parked.get(&dim).map(|level| &*level.mobs)
@@ -1226,7 +1205,7 @@ impl Game<'_> {
         // (each `ServerLevel.tick` only reads `runsNormally`), and the native
         // `ServerTickStart` before that level work (NeoForge's
         // `ServerTickEvent.Pre`). A paused pass and a held server tick nothing.
-        let running = if !paused && !self.agent.hold_server {
+        let running = if !paused {
             self.clock.check_sprint_completion();
             if let Some(report) = self.clock.take_sprint_report() {
                 // ServerTickRateManager.finishTickSprint: the server's sendSuccess.
@@ -1437,7 +1416,6 @@ impl Game<'_> {
         // Only a server ticks its own world from here: its players are guests, swapped in for
         // their turns (`as_guest`), and the window's player is a client of it.
         self.ticks += 1;
-        self.repro_tick();
         let window = !self.is_logical_server();
         if window {
             self.track_experience_display();

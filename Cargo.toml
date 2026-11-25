@@ -1,23 +1,16 @@
 [workspace]
-exclude = ["crates/horizon-telemetry-server", "launcher", "crates/horizon-mod-registry", "third_party/wgpu-hal", "third_party/naga", "third_party/libmimalloc-sys", "tools/fixtures/paper-trace-mod"]
+exclude = ["third_party/wgpu-hal", "third_party/naga", "third_party/libmimalloc-sys"]
 members = [
     "crates/horizon-guest-stack",
     "crates/horizon-mod-vocab",
     "crates/horizon-game-discovery",
-    "crates/horizon-cosmetics",
-    "crates/horizon-telemetry",
     "crates/horizon-hooks",
     "crates/horizon-mod-host",
     "crates/horizon-game",
-    "crates/horizon-official",
-    "crates/horizon-heartbeat",
 
     "crates/horizon-core",
-    "crates/horizon-platform",
-    "crates/horizon-addresses",
     "crates/horizon-mod-runtime",
     "crates/horizon-mod-render",
-    "docs/modding/examples",
     "crates/horizon-dualsense",
     "crates/horizon-narrator",
     "crates/horizon-threads",
@@ -26,7 +19,6 @@ members = [
     "crates/horizon-client",
     "crates/horizon-engine-slots",
     "crates/horizon-mod-points",
-    "crates/horizon-internals",
     "crates/horizon-client-lib",
     "crates/horizon-gameplay",
     "crates/horizon-client-gameplay",
@@ -39,11 +31,6 @@ members = [
     "crates/horizon-java-properties",
     "crates/horizon-anticheat",
     "crates/horizon-chat-filter",
-    # The Model Context Protocol, shared by horizon-ctl, horizon-server and the launcher.
-    "crates/horizon-mcp",
-    "crates/horizon-server",
-    "crates/horizon-server-launch",
-    "crates/horizon-bots",
     "crates/horizon-assets",
     "crates/horizon-protocol",
     "crates/horizon-theme",
@@ -52,31 +39,17 @@ members = [
     "crates/horizon-bench",
     "crates/horizon-perf-format",
     "crates/horizon-perf",
-    "crates/horizon-perf-share",
-    "crates/horizon-friends",
-    "crates/horizon-relay",
     "crates/horizon-mod-package",
-    "crates/horizon-mod-wasm",
     "crates/horizon-mod-api-gen",
     "crates/horizon-mod-api",
-    "crates/horizon-mod-dimension-game",
-    "crates/horizon-hot-paths-game",
     "crates/horizon-mod-api-macros",
     "crates/horizon-mod-point-shape",
     "crates/horizon-mod-source",
     "crates/horizon-mod-surface",
-    "crates/horizon-mod-api-gen/dispatch-tests",
-    "crates/horizon-mod-wasm/wire-loopback",
-    "crates/cargo-horizon-mod",
-    "crates/horizon-port-pack",
-    "crates/horizon-port-pack-cli",
     "crates/horizon-shaders",
     "crates/horizon-optifine",
     "crates/horizon-polytone",
     "crates/horizon-shader-api",
-    "crates/horizon-release-sign",
-    "crates/horizon-mod-deps",
-    "xtask",
 ]
 resolver = "2"
 
@@ -127,19 +100,7 @@ debug = "line-tables-only"
 [profile.dev.package.sha2]
 opt-level = 3
 
-# Fixture tests compile real wasm modules with Cranelift at runtime. Keep the
-# compiler optimized without optimizing (or weakening) the tests themselves.
-[profile.dev.package.wasmtime]
-opt-level = 3
-[profile.dev.package.cranelift-codegen]
-opt-level = 3
 
-# Packaging validates each real module repeatedly. Optimize the validator, not
-# the fixture or guest code (which use their separate horizon-wasm profile).
-[profile.dev.package.horizon-mod-package]
-opt-level = 3
-[profile.dev.package.wasmparser]
-opt-level = 3
 
 [profile.dev.package.horizon-mod-api-gen]
 opt-level = 3
@@ -167,3 +128,10 @@ inherits = "release"
 lto = false
 codegen-units = 16
 incremental = true
+
+[profile.maxperf]
+inherits = "release"
+opt-level = 3
+codegen-units = 1
+strip = true
+lto = "fat"

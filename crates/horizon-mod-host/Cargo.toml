@@ -15,7 +15,6 @@ horizon-guest-stack = { path = "../horizon-guest-stack" }
 horizon-client = { path = "../horizon-client", default-features = false }
 
 horizon-mod-package = { path = "../horizon-mod-package", default-features = false, features = ["index"] }
-horizon-mod-wasm = { path = "../horizon-mod-wasm" }
 mod-api = { package = "horizon-mod-api", path = "../horizon-mod-api" }
 
 log = "0.4"
@@ -28,12 +27,11 @@ sha2 = "0.10"
 workspace = true
 
 [features]
-default = ["audio", "controllers", "horizon-extras"]
+default = ["audio", "controllers"]
 audio = ["horizon-client/audio"]
 controllers = ["horizon-client/controllers"]
 horizon-extras = ["horizon-client/horizon-extras"]
 testing = ["horizon-client/testing"]
-friends = ["horizon-client/friends"]
 rng-trace = ["horizon-client/rng-trace"]
 system-allocator = ["horizon-client/system-allocator"]
 alloc-census = ["horizon-client/alloc-census"]

@@ -796,18 +796,7 @@ impl Game<'_> {
                 self.toggle_debug_options();
                 true
             }
-            // Horizon's own: a repro recording for a bug report (game/runtime/repro.rs).
-            // Off unless the AI Agent page enables the shortcuts.
-            DebugAction::RecordSession if !self.settings.extras.repro_keys => false,
-            DebugAction::ExportRepro if !self.settings.extras.repro_keys => false,
-            DebugAction::RecordSession => {
-                self.toggle_recording_key();
-                true
-            }
-            DebugAction::ExportRepro => {
-                self.export_repro_key();
-                true
-            }
+            DebugAction::RecordSession | DebugAction::ExportRepro => false,
             DebugAction::DumpDynamicTextures => {
                 // `KeyboardHandler`: `TextureUtil.getDebugTexturePath` is the game
                 // folder's `screenshots/debug`; `TextureManager.dumpAllSheets` then
@@ -919,7 +908,9 @@ impl Game<'_> {
             return;
         };
         let pos = hit.pos;
-        let state = self.state_string(self.world.block(pos[0], pos[1], pos[2]));
+        let state = self
+            .block_state_string(self.world.block(pos[0], pos[1], pos[2]))
+            .unwrap_or_else(|| "?".into());
         if query {
             // DebugQueryHandler.queryBlockEntityTag: the answer copies it.
             let reply = QueryReply::Block { pos, state };

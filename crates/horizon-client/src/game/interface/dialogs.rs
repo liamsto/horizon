@@ -1207,28 +1207,6 @@ impl Game<'_> {
         true
     }
 
-    /// What `state` reports: the open dialog and its values, or the waiting
-    /// and warning screens.
-    pub(super) fn dialog_status(&self) -> serde_json::Value {
-        let d = &self.dialogs;
-        let screen = if d.warning {
-            Some("warning")
-        } else if d.waiting.is_some() {
-            Some("waiting_for_response")
-        } else {
-            None
-        };
-        let open = d.open.as_ref().map(|open| {
-            let mut values = open.values.clone();
-            for (value, field) in values.iter_mut().zip(&open.fields) {
-                if let Some(f) = field {
-                    *value = InputValue::Text(f.value());
-                }
-            }
-            open.dialog.json(&values)
-        });
-        serde_json::json!({ "open": open, "screen": screen })
-    }
 }
 
 fn draw_background(batch: &mut HudBatch, atlas: &horizon_client::hud::HudAtlas, in_world: bool) {
